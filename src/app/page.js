@@ -1,19 +1,24 @@
 'use client'
 
-import { useState } from 'react'
 import dynamic from 'next/dynamic'
-import LoadingScreen from '@/screens/LoadingScreen'
 import { useGameStore } from '@/store/useGameStore'
+import MainMenu from '@/screens/MainMenu'
 
 const GameWorld = dynamic(() => import('@/screens/GameWorld'), { ssr: false })
+const SandboxWorld = dynamic(() => import('@/screens/SandboxWorld'), { ssr: false })
 
 export default function Home() {
-  const gameStarted = useGameStore((s) => s.gameStarted)
+  const gameMode = useGameStore((s) => s.gameMode)
   const startGame = useGameStore((s) => s.startGame)
+  const startSandbox = useGameStore((s) => s.startSandbox)
 
-  if (!gameStarted) {
-    return <LoadingScreen onComplete={startGame} />
+  if (gameMode === 'game') {
+    return <GameWorld />
   }
 
-  return <GameWorld />
+  if (gameMode === 'sandbox') {
+    return <SandboxWorld />
+  }
+
+  return <MainMenu onStartGame={startGame} onStartSandbox={startSandbox} />
 }

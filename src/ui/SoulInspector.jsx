@@ -99,7 +99,7 @@ export default function SoulInspector() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          systemPrompt: `You are ${soul.name}, a soul living in a simulated world. You are a ${soul.role || 'person'}. Respond in character, briefly.`,
+          systemPrompt: `You are ${soul.llmName}, a soul living in a simulated world. You are a ${soul.role || 'person'}. Respond in character, briefly.`,
           userPrompt: `GOD asks you: ${questionInput}`,
           maxTokens: 150,
         }),
@@ -181,7 +181,7 @@ export default function SoulInspector() {
                   lineHeight: 1.2,
                 }}
               >
-                {soul.name || 'Unknown Soul'}
+                {soul.llmName || 'Unknown Soul'}
               </motion.h2>
               <div style={{
                 fontSize: '11px',
@@ -256,7 +256,7 @@ export default function SoulInspector() {
 
             <Divider />
 
-            {/* Latest Thought */}
+            {/* Action Log */}
             <div>
               <div style={{
                 fontSize: '10px',
@@ -265,26 +265,75 @@ export default function SoulInspector() {
                 textTransform: 'uppercase',
                 marginBottom: '8px',
               }}>
-                Latest Thought
+                Actions
               </div>
-              <motion.p
-                key={soul.latestThought?.text}
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                transition={{ duration: 0.5 }}
-                style={{
-                  fontSize: '12px',
+              {soul.actionLog?.length > 0 ? (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                  {soul.actionLog.slice(0, 8).map((entry, i) => (
+                    <motion.div
+                      key={`${entry.text}-${entry.timestamp}`}
+                      initial={i === 0 ? { opacity: 0, x: -8 } : false}
+                      animate={{ opacity: i === 0 ? 1 : 1 - i * 0.1, x: 0 }}
+                      transition={{ duration: 0.3 }}
+                      style={{
+                        display: 'flex',
+                        alignItems: 'flex-start',
+                        gap: '8px',
+                        padding: '6px 8px',
+                        background: i === 0
+                          ? `linear-gradient(135deg, ${entry.color}18 0%, rgba(255,255,255,0.03) 100%)`
+                          : 'rgba(255,255,255,0.02)',
+                        borderRadius: '4px',
+                        borderLeft: `2px solid ${i === 0 ? entry.color : 'var(--hud-border)'}`,
+                      }}
+                    >
+                      <span style={{ fontSize: '13px', lineHeight: 1, flexShrink: 0, marginTop: '1px' }}>
+                        {entry.icon}
+                      </span>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{
+                          fontSize: '11px',
+                          fontWeight: i === 0 ? 'bold' : 'normal',
+                          color: i === 0 ? entry.color : 'var(--text-secondary)',
+                          lineHeight: 1.3,
+                        }}>
+                          {entry.text}
+                        </div>
+                        {i === 0 && entry.detail && (
+                          <div style={{
+                            fontSize: '10px',
+                            color: 'var(--text-secondary)',
+                            marginTop: '2px',
+                            lineHeight: 1.3,
+                            opacity: 0.8,
+                          }}>
+                            {entry.detail}
+                          </div>
+                        )}
+                      </div>
+                      <span style={{
+                        fontSize: '9px',
+                        color: 'var(--text-secondary)',
+                        opacity: 0.5,
+                        flexShrink: 0,
+                        marginTop: '2px',
+                      }}>
+                        {entry.hour != null ? `${entry.hour}h` : ''}
+                      </span>
+                    </motion.div>
+                  ))}
+                </div>
+              ) : (
+                <div style={{
+                  fontSize: '11px',
                   fontStyle: 'italic',
                   color: 'var(--text-secondary)',
-                  lineHeight: 1.6,
+                  opacity: 0.5,
                   padding: '8px',
-                  background: 'rgba(255,255,255,0.03)',
-                  borderRadius: '4px',
-                  borderLeft: '2px solid var(--hud-border)',
-                }}
-              >
-                "{soul.latestThought?.text || 'Thinking...'}"
-              </motion.p>
+                }}>
+                  Awaiting first action...
+                </div>
+              )}
             </div>
 
             <Divider />

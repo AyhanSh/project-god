@@ -1,6 +1,7 @@
 'use client'
 
-import { useMemo, useRef } from 'react'
+import { useMemo, useRef, useEffect } from 'react'
+import { useFrame } from '@react-three/fiber'
 import * as THREE from 'three'
 import {
   TERRAIN_SIZE,
@@ -11,6 +12,7 @@ import {
   MOUNTAIN_THRESHOLD,
   sampleHeight,
 } from '@/world/Terrain'
+import { registerNodes, getActiveNodes } from '@/engine/ResourceNodeRegistry'
 
 // ---------------------------------------------------------------------------
 // Deterministic PRNG (same implementation as Terrain.jsx to keep it isolated)
@@ -28,13 +30,13 @@ function mulberry32(seed) {
 // ---------------------------------------------------------------------------
 // Tree count
 // ---------------------------------------------------------------------------
-const TOTAL_TREES = 500
+const TOTAL_TREES = 1000
 // Split roughly 60/40 between oak and pine
-const OAK_COUNT  = 300
-const PINE_COUNT = 200
+const OAK_COUNT  = 600
+const PINE_COUNT = 400
 
 // Margin from edge of terrain
-const EDGE_MARGIN = 5
+const EDGE_MARGIN = 8
 // Extra exclusion around the flat city zone
 const CITY_EXCLUSION = FLAT_RADIUS + 4
 // Height above water where trees begin
@@ -151,7 +153,7 @@ export default function Trees({ heightmap, seed = 42 }) {
   const oakMeshRef  = useRef(null)
   const pineMeshRef = useRef(null)
 
-  const { oakGeo, pineGeo, oakMatrices, pineMatrices } = useMemo(() => {
+  const { oakGeo, pineGeo, oakMatrices, pineMatrices, treePositions } = useMemo(() => {
     const rng = mulberry32(seed)
 
     // --- Shared base geometries (single prototype each, scaled per instance) ---
@@ -212,8 +214,69 @@ export default function Trees({ heightmap, seed = 42 }) {
       }
     }
 
-    return { oakGeo, pineGeo, oakMatrices, pineMatrices }
+    // Extract world positions for the resource registry
+    const treePositions = []
+    for (let i = 0; i < oakMatrices.length; i++) {
+      const m = oakMatrices[i]
+      treePositions.push({ x: m.elements[12], z: m.elements[14], index: i })
+    }
+    for (let i = 0; i < pineMatrices.length; i++) {
+      const m = pineMatrices[i]
+      treePositions.push({ x: m.elements[12], z: m.elements[14], index: oakMatrices.length + i })
+    }
+
+    return { oakGeo, pineGeo, oakMatrices, pineMatrices, treePositions }
   }, [heightmap, seed])
+
+  // Register tree positions for soul interactions
+  useEffect(() => {
+    registerNodes('tree', treePositions)
+    return () => registerNodes('tree', [])
+  }, [treePositions])
+
+  // Temp matrix for shake (zero-allocation per frame)
+  const _tempMat = useMemo(() => new THREE.Matrix4(), [])
+
+  // Shake trees that are being harvested
+  useFrame(() => {
+    const oakMesh = oakMeshRef.current
+    const pineMesh = pineMeshRef.current
+    if (!oakMesh && !pineMesh) return
+
+    const active = getActiveNodes()
+    if (active.size === 0) return
+
+    const t = performance.now() / 1000
+    let oakDirty = false
+    let pineDirty = false
+
+    for (const key of active) {
+      if (!key.startsWith('tree_')) continue
+      const idx = parseInt(key.slice(5))
+
+      if (idx < oakMatrices.length && oakMesh) {
+        const orig = oakMatrices[idx]
+        _tempMat.copy(orig)
+        _tempMat.elements[12] += Math.sin(t * 18) * 0.12
+        _tempMat.elements[13] += Math.abs(Math.sin(t * 12)) * 0.05
+        oakMesh.setMatrixAt(idx, _tempMat)
+        oakDirty = true
+      } else if (pineMesh) {
+        const pineIdx = idx - oakMatrices.length
+        if (pineIdx >= 0 && pineIdx < pineMatrices.length) {
+          const orig = pineMatrices[pineIdx]
+          _tempMat.copy(orig)
+          _tempMat.elements[12] += Math.sin(t * 18) * 0.12
+          _tempMat.elements[13] += Math.abs(Math.sin(t * 12)) * 0.05
+          pineMesh.setMatrixAt(pineIdx, _tempMat)
+          pineDirty = true
+        }
+      }
+    }
+
+    if (oakDirty) oakMesh.instanceMatrix.needsUpdate = true
+    if (pineDirty) pineMesh.instanceMatrix.needsUpdate = true
+  })
 
   // Write instance matrices after geometry is ready
   const setOakRef = (mesh) => {

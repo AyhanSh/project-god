@@ -2,6 +2,9 @@
 import { create } from 'zustand'
 
 export const useGameStore = create((set, get) => ({
+  // === MODE ===
+  gameMode: 'menu', // 'menu' | 'game' | 'sandbox'
+
   // === TIME ===
   currentYear: -3000,
   tickRate: 1,
@@ -46,6 +49,9 @@ export const useGameStore = create((set, get) => ({
   foodSupply: 100,
   happinessAvg: 60,
   warOngoing: false,
+  wood: 0,
+  stone: 0,
+  ore: 0,
 
   // === GOD ===
   godFavor: 500,
@@ -54,10 +60,26 @@ export const useGameStore = create((set, get) => ({
   // === UI ===
   showSoulInspector: false,
   showGodPanel: false,
+  showDevPanel: false,
   showEventCinematic: false,
   activeCinematic: null,
   cameraTarget: null,
   cameraMode: 'free', // 'free' | 'follow' | 'cinematic'
+  flyMode: false,
+  flySpeed: 40, // base fly speed (WASD movement units/sec)
+
+  // === DEV OVERRIDES === (null = auto / use engine values)
+  devWeather: null,
+  devFogDensity: null,
+  devTimeOfDay: null, // 0-23 hour override
+
+  // === SANDBOX ===
+  sandboxDragBuildingId: null,  // building id being dragged (null = none)
+  sandboxDragSoulId: null,      // soul id being dragged (null = none)
+  sandboxForceAnimation: null,  // force all sandbox souls to this animation
+  sandboxTrees: [],              // sandbox-placed trees [{id, position, health}]
+  sandboxRocks: [],              // sandbox-placed rocks [{id, position, health, type}]
+  sandboxHarvestTasks: [],       // [{soulId, targetId, targetType: 'tree'|'rock'}]
 
   // === ACTIONS ===
   setYear: (year) => set({ currentYear: year }),
@@ -72,7 +94,9 @@ export const useGameStore = create((set, get) => ({
   setPaused: (p) => set({ paused: p }),
   setSpeed: (mult) => set({ speedMultiplier: mult }),
 
-  startGame: () => set({ gameStarted: true, paused: false }),
+  startGame: () => set({ gameStarted: true, paused: false, gameMode: 'game' }),
+  startSandbox: () => set({ gameStarted: true, paused: true, gameMode: 'sandbox' }),
+  setGameMode: (mode) => set({ gameMode: mode }),
 
   setSouls: (souls) => set({ souls }),
   updateSoul: (id, updates) => set((s) => ({
@@ -95,7 +119,7 @@ export const useGameStore = create((set, get) => ({
   setSeason: (season) => set({ season }),
 
   addEventLog: (entry) => set((s) => ({
-    eventLog: [entry, ...s.eventLog].slice(0, 200),
+    eventLog: [{ ...entry, timestamp: Date.now() }, ...s.eventLog].slice(0, 200),
   })),
 
   setGodFavor: (favor) => set({ godFavor: favor }),
@@ -105,6 +129,10 @@ export const useGameStore = create((set, get) => ({
 
   setCameraTarget: (target) => set({ cameraTarget: target }),
   setCameraMode: (mode) => set({ cameraMode: mode }),
+  toggleFlyMode: () => set((s) => ({ flyMode: !s.flyMode })),
+  setFlySpeed: (speed) => set({ flySpeed: Math.max(5, Math.min(200, speed)) }),
+  increaseFlySpeed: () => set((s) => ({ flySpeed: Math.min(200, s.flySpeed + 10) })),
+  decreaseFlySpeed: () => set((s) => ({ flySpeed: Math.max(5, s.flySpeed - 10) })),
 
   triggerCinematic: (cinematic) => set({
     showEventCinematic: true,
@@ -116,7 +144,21 @@ export const useGameStore = create((set, get) => ({
     activeCinematic: null,
   }),
 
+  addResource: (type, amount) => set((s) => ({ [type]: (s[type] || 0) + amount })),
+
   setWorldState: (state) => set({ worldState: state }),
   setTechLevel: (level) => set({ techLevel: level }),
   setPopulation: (pop) => set({ population: pop }),
+  setWarOngoing: (v) => set({ warOngoing: v }),
+
+  // === GOD TARGETING ===
+  godTargeting: null,
+  godTargetingFirst: null, // first soul id for two_souls powers
+  setGodTargeting: (p) => set({ godTargeting: p, godTargetingFirst: null }),
+  setGodTargetingFirst: (id) => set({ godTargetingFirst: id }),
+  clearGodTargeting: () => set({ godTargeting: null, godTargetingFirst: null }),
+
+  // === AUDIO ===
+  muted: false,
+  toggleMute: () => set((s) => ({ muted: !s.muted })),
 }))

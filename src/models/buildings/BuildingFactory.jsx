@@ -209,7 +209,7 @@ function UnknownBuilding({ position = [0, 0, 0], scale = 1, progress = 1 }) {
 export default function BuildingFactory({
   type,
   position = [0, 0, 0],
-  scale = 1,
+  scale = 2,
   progress = 1,
 }) {
   const Component = BUILDING_REGISTRY[type]

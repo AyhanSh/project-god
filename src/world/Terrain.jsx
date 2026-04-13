@@ -5,11 +5,11 @@ import * as THREE from 'three'
 import { createNoise2D } from 'simplex-noise'
 
 // Terrain constants shared across modules
-export const TERRAIN_SIZE = 200
-export const TERRAIN_SEGMENTS = 256
-export const TERRAIN_SCALE = 18      // max height in world units
+export const TERRAIN_SIZE = 800
+export const TERRAIN_SEGMENTS = 512
+export const TERRAIN_SCALE = 12      // max height in world units
 export const WATER_LEVEL = -1        // y position of the water plane
-export const FLAT_RADIUS = 18        // radius of flat center building zone
+export const FLAT_RADIUS = 22        // radius of flat center building zone
 export const MOUNTAIN_THRESHOLD = 0.62  // normalized height above which = mountain
 
 // Build a seeded PRNG so terrain is deterministic
@@ -43,15 +43,21 @@ export function generateHeightmap(seed = 1337) {
       const wx = (xi / TERRAIN_SEGMENTS) * TERRAIN_SIZE - halfSize
       const wz = (zi / TERRAIN_SEGMENTS) * TERRAIN_SIZE - halfSize
 
-      // Multi-octave simplex noise
+      // Multi-octave simplex noise — gentle, rolling landscape
       let h = 0
-      h += noise2D(wx * 0.008, wz * 0.008) * 1.0    // broad continent
-      h += noise2D(wx * 0.020, wz * 0.020) * 0.5    // hills
-      h += noise2D(wx * 0.050, wz * 0.050) * 0.25   // details
-      h += noise2D(wx * 0.120, wz * 0.120) * 0.125  // micro-detail
-      h += noise2D(wx * 0.280, wz * 0.280) * 0.0625 // surface texture
-      // Normalise from roughly [-1.9375, 1.9375] -> [0, 1]
-      h = (h / 1.9375 + 1) * 0.5
+      h += noise2D(wx * 0.004, wz * 0.004) * 1.0    // broad continent
+      h += noise2D(wx * 0.010, wz * 0.010) * 0.3    // gentle hills
+      h += noise2D(wx * 0.025, wz * 0.025) * 0.12   // soft detail
+      h += noise2D(wx * 0.060, wz * 0.060) * 0.05   // micro-detail
+      // Normalise from roughly [-1.47, 1.47] -> [0, 1]
+      h = (h / 1.47 + 1) * 0.5
+
+      // Rectangular edge falloff — drops to ocean at terrain borders
+      const edgeMargin = 30
+      const ex = Math.max(0, (Math.abs(wx) - (halfSize - edgeMargin)) / edgeMargin)
+      const ez = Math.max(0, (Math.abs(wz) - (halfSize - edgeMargin)) / edgeMargin)
+      const edgeFade = 1 - Math.min(1, Math.max(ex, ez))
+      h = 0.15 + (h - 0.15) * edgeFade * edgeFade
 
       // Flatten centre for the city
       const dist = Math.sqrt(wx * wx + wz * wz)

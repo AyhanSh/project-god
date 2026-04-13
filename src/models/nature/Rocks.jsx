@@ -1,6 +1,7 @@
 'use client'
 
-import { useMemo, useRef } from 'react'
+import { useMemo, useRef, useEffect } from 'react'
+import { useFrame } from '@react-three/fiber'
 import * as THREE from 'three'
 import {
   TERRAIN_SIZE,
@@ -10,6 +11,7 @@ import {
   MOUNTAIN_THRESHOLD,
   sampleHeight,
 } from '@/world/Terrain'
+import { registerNodes, getActiveNodes } from '@/engine/ResourceNodeRegistry'
 
 // Deterministic PRNG
 function mulberry32(seed) {
@@ -22,14 +24,14 @@ function mulberry32(seed) {
   }
 }
 
-const ROCK_COUNT   = 200
-const EDGE_MARGIN  = 4
+const ROCK_COUNT   = 500
+const EDGE_MARGIN  = 6
 const CITY_EXCLUSION = FLAT_RADIUS + 2
 
 export default function Rocks({ heightmap, seed = 99 }) {
   const meshRef = useRef(null)
 
-  const { geo, matrices } = useMemo(() => {
+  const { geo, matrices, rockPositions } = useMemo(() => {
     const rng = mulberry32(seed)
     const geo = new THREE.IcosahedronGeometry(1, 1)
 
@@ -78,8 +80,51 @@ export default function Rocks({ heightmap, seed = 99 }) {
       matrices.push(dummy.matrix.clone())
     }
 
-    return { geo, matrices }
+    // Extract world positions for the resource registry
+    const rockPositions = []
+    for (let i = 0; i < matrices.length; i++) {
+      const m = matrices[i]
+      rockPositions.push({ x: m.elements[12], z: m.elements[14], index: i })
+    }
+
+    return { geo, matrices, rockPositions }
   }, [heightmap, seed])
+
+  // Register rock positions for soul interactions
+  useEffect(() => {
+    registerNodes('rock', rockPositions)
+    return () => registerNodes('rock', [])
+  }, [rockPositions])
+
+  // Temp matrix for shake
+  const _tempMat = useMemo(() => new THREE.Matrix4(), [])
+
+  // Shake rocks being mined
+  useFrame(() => {
+    const mesh = meshRef.current
+    if (!mesh) return
+
+    const active = getActiveNodes()
+    if (active.size === 0) return
+
+    const t = performance.now() / 1000
+    let dirty = false
+
+    for (const key of active) {
+      if (!key.startsWith('rock_')) continue
+      const idx = parseInt(key.slice(5))
+      if (idx < 0 || idx >= matrices.length) continue
+
+      const orig = matrices[idx]
+      _tempMat.copy(orig)
+      _tempMat.elements[12] += Math.sin(t * 22) * 0.06
+      _tempMat.elements[14] += Math.sin(t * 17) * 0.04
+      mesh.setMatrixAt(idx, _tempMat)
+      dirty = true
+    }
+
+    if (dirty) mesh.instanceMatrix.needsUpdate = true
+  })
 
   const setRef = (mesh) => {
     if (!mesh) return

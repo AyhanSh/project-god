@@ -3,6 +3,37 @@
 import { nanoid } from 'nanoid'
 import { sampleHeight, WATER_LEVEL, FLAT_RADIUS } from '@/world/Terrain'
 import { generateHeightmap } from '@/world/Terrain'
+import { getSoulPosition } from './SoulPositionRegistry'
+import { useGameStore } from '@/store/useGameStore'
+
+// Resource costs per building size category
+const BUILDING_COSTS = {
+  small:  { wood: 10, stone: 5,  ore: 0  },
+  medium: { wood: 20, stone: 10, ore: 5  },
+  large:  { wood: 30, stone: 20, ore: 10 },
+}
+
+// Keywords to estimate building size
+function _getBuildingSize(type) {
+  const t = (type || '').toLowerCase()
+  if (t.includes('castle') || t.includes('cathedral') || t.includes('factory') || t.includes('university')) return 'large'
+  if (t.includes('temple') || t.includes('market') || t.includes('theatre') || t.includes('hospital') || t.includes('observatory')) return 'medium'
+  return 'small'
+}
+
+function _canAfford(cost) {
+  const s = useGameStore.getState()
+  return s.wood >= cost.wood && s.stone >= cost.stone && (s.ore || 0) >= cost.ore
+}
+
+function _deductResources(cost) {
+  const s = useGameStore.getState()
+  useGameStore.setState({
+    wood: Math.max(0, s.wood - cost.wood),
+    stone: Math.max(0, s.stone - cost.stone),
+    ore: Math.max(0, (s.ore || 0) - cost.ore),
+  })
+}
 
 const heightmap = generateHeightmap(1337)
 
@@ -12,6 +43,7 @@ export class CityEngine {
     this.buildingQueue = []
     this.constructionSites = []
     this.lastSyncedProgress = {}
+    this.processedAmbitions = new Set()
     this.initialized = false
   }
 
@@ -43,15 +75,19 @@ export class CityEngine {
         this._planExpansion(city, era)
       }
 
-      // Soul ambitions drive building
+      // Soul ambitions drive building (once per ambition)
       for (const soul of citySouls) {
-        if (soul.currentAmbition && Math.random() < 0.002) {
-          this._processSoulAmbition(soul, city, era, year, store)
+        if (soul.currentAmbition) {
+          const ambKey = soul.id + '::' + soul.currentAmbition.goal
+          if (!this.processedAmbitions.has(ambKey)) {
+            this.processedAmbitions.add(ambKey)
+            this._processSoulAmbition(soul, city, era, year, store)
+          }
         }
       }
 
       // Process construction
-      this._processConstruction(year, store)
+      this._processConstruction(year, store, souls)
     }
   }
 
@@ -61,6 +97,10 @@ export class CityEngine {
     if (availableTypes.length === 0) return
 
     const type = availableTypes[Math.floor(Math.random() * availableTypes.length)]
+    const cost = BUILDING_COSTS[_getBuildingSize(type)]
+    if (!_canAfford(cost)) return // not enough resources
+
+    _deductResources(cost)
     this._addToQueue(type, city, null, 10)
     city.capacity += 5
   }
@@ -73,12 +113,17 @@ export class CityEngine {
     // Check if already in queue
     if (this.buildingQueue.some((b) => b.builder === soul.id)) return
 
+    // Check resource costs
+    const cost = BUILDING_COSTS[_getBuildingSize(buildingType)]
+    if (!_canAfford(cost)) return // need more resources first
+
+    _deductResources(cost)
     this._addToQueue(buildingType, city, soul.id, soul.currentAmbition.timeline || 10)
 
     if (store) {
       store.getState().addEventLog({
         year: Math.round(year),
-        text: `${soul.llmName} begins construction of a ${buildingType.replace(/_/g, ' ')}.`,
+        text: `${soul.llmName} begins construction of a ${buildingType.replace(/_/g, ' ')} (${cost.wood}w ${cost.stone}s ${cost.ore}o).`,
         type: 'construction',
         soulId: soul.id,
       })
@@ -116,13 +161,14 @@ export class CityEngine {
     })
   }
 
-  _processConstruction(year, store) {
+  _processConstruction(year, store, souls) {
     let sitesChanged = false
 
     // Move queued items to active construction
     while (this.buildingQueue.length > 0 && this.constructionSites.length < 5) {
       const item = this.buildingQueue.shift()
       item.startYear = year
+      item._lastProgressYear = year
       this.constructionSites.push(item)
       sitesChanged = true
 
@@ -136,11 +182,33 @@ export class CityEngine {
       }
     }
 
-    // Update progress
+    // Update progress (builder-presence-aware)
     const completed = []
     for (const site of this.constructionSites) {
       if (!site.startYear) continue
-      site.progress = Math.min(1.0, (year - site.startYear) / site.duration)
+
+      // Any alive soul doing build_structure nearby speeds construction
+      let builderMultiplier = 0.4 // base community effort
+      if (souls) {
+        for (const soul of souls) {
+          if (!soul.isAlive) continue
+          if (soul.currentActivity !== 'build_structure' && soul.currentActivity !== 'work') continue
+          const pos = getSoulPosition(soul.id)
+          if (!pos) continue
+          const dx = pos.x - site.position.x
+          const dz = pos.z - site.position.z
+          if (Math.sqrt(dx * dx + dz * dz) < 30) {
+            builderMultiplier += 0.4 // each nearby worker adds speed
+          }
+        }
+        builderMultiplier = Math.min(2.0, builderMultiplier) // cap at 2x
+      }
+
+      const lastYear = site._lastProgressYear || site.startYear
+      const elapsed = year - lastYear
+      site._lastProgressYear = year
+      const baseRate = 1.0 / site.duration
+      site.progress = Math.min(1.0, site.progress + baseRate * builderMultiplier * elapsed)
 
       // Sync to store throttled by 2% increments
       if (store) {
@@ -236,6 +304,23 @@ export class CityEngine {
 
   getAllBuildings() {
     return this.cities.flatMap((c) => c.buildings)
+  }
+
+  toJSON() {
+    return {
+      cities: this.cities,
+      buildingQueue: this.buildingQueue,
+      constructionSites: this.constructionSites,
+      processedAmbitions: [...this.processedAmbitions],
+    }
+  }
+
+  rehydrate(data) {
+    this.cities = data.cities || []
+    this.buildingQueue = data.buildingQueue || []
+    this.constructionSites = data.constructionSites || []
+    this.processedAmbitions = new Set(data.processedAmbitions || [])
+    this.initialized = true
   }
 }
 

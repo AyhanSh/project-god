@@ -1,7 +1,9 @@
 'use client'
 
+import { useState } from 'react'
 import { motion } from 'framer-motion'
 import { useGameStore } from '@/store/useGameStore'
+import { saveLoadEngine } from '@/engine/SaveLoadEngine'
 
 const ERA_NAMES = {
   ancient: 'Ancient Age',
@@ -23,6 +25,7 @@ function formatYear(year) {
 const SPEEDS = [1, 2, 5, 10]
 
 export default function HUD() {
+  const [saveFeedback, setSaveFeedback] = useState(null)
   const currentYear = useGameStore((s) => s.currentYear)
   const currentEra = useGameStore((s) => s.currentEra)
   const population = useGameStore((s) => s.population)
@@ -32,8 +35,30 @@ export default function HUD() {
   const setSpeed = useGameStore((s) => s.setSpeed)
   const togglePause = useGameStore((s) => s.togglePause)
 
+  const showDevPanel = useGameStore((s) => s.showDevPanel)
+  const flyMode = useGameStore((s) => s.flyMode)
+  const toggleFlyMode = useGameStore((s) => s.toggleFlyMode)
+  const muted = useGameStore((s) => s.muted)
+  const toggleMute = useGameStore((s) => s.toggleMute)
+
+  const handleSave = () => {
+    const result = saveLoadEngine.save('auto')
+    setSaveFeedback(result.success ? `Saved at year ${formatYear(result.year)}` : 'Save failed')
+    setTimeout(() => setSaveFeedback(null), 2500)
+  }
+
+  const handleLoad = () => {
+    const result = saveLoadEngine.load('auto')
+    setSaveFeedback(result.success ? `Loaded year ${formatYear(result.year)}` : result.reason || 'Load failed')
+    setTimeout(() => setSaveFeedback(null), 2500)
+  }
+
   const handleGodPanelToggle = () => {
     useGameStore.setState((s) => ({ showGodPanel: !s.showGodPanel }))
+  }
+
+  const handleDevPanelToggle = () => {
+    useGameStore.setState((s) => ({ showDevPanel: !s.showDevPanel }))
   }
 
   const eraDisplayName = ERA_NAMES[currentEra] || currentEra
@@ -164,28 +189,151 @@ export default function HUD() {
 
       {/* Bottom Bar */}
       <div style={bottomBarStyle}>
-        {/* Left: God Powers button */}
-        <motion.button
-          whileHover={{ scale: 1.05, boxShadow: '0 0 12px var(--accent-glow)' }}
-          whileTap={{ scale: 0.95 }}
-          onClick={handleGodPanelToggle}
-          style={{
-            background: showGodPanel ? 'var(--accent)' : 'rgba(107, 92, 231, 0.15)',
-            border: '1px solid var(--accent)',
-            color: showGodPanel ? '#fff' : 'var(--accent)',
-            padding: '4px 14px',
-            borderRadius: '4px',
-            cursor: 'pointer',
-            fontSize: '11px',
-            fontFamily: 'Georgia, serif',
-            letterSpacing: '1px',
-            textTransform: 'uppercase',
-            transition: 'background 0.2s',
-            minWidth: '120px',
-          }}
-        >
-          ⚡ God Powers
-        </motion.button>
+        {/* Left: God Powers + Dev Panel buttons */}
+        <div style={{ display: 'flex', gap: '6px' }}>
+          <motion.button
+            whileHover={{ scale: 1.05, boxShadow: '0 0 12px var(--accent-glow)' }}
+            whileTap={{ scale: 0.95 }}
+            onClick={handleGodPanelToggle}
+            style={{
+              background: showGodPanel ? 'var(--accent)' : 'rgba(107, 92, 231, 0.15)',
+              border: '1px solid var(--accent)',
+              color: showGodPanel ? '#fff' : 'var(--accent)',
+              padding: '4px 14px',
+              borderRadius: '4px',
+              cursor: 'pointer',
+              fontSize: '11px',
+              fontFamily: 'Georgia, serif',
+              letterSpacing: '1px',
+              textTransform: 'uppercase',
+              transition: 'background 0.2s',
+              minWidth: '120px',
+            }}
+          >
+            ⚡ God Powers
+          </motion.button>
+
+          <motion.button
+            whileHover={{ scale: 1.05, boxShadow: '0 0 12px rgba(79,195,247,0.4)' }}
+            whileTap={{ scale: 0.95 }}
+            onClick={handleDevPanelToggle}
+            style={{
+              background: showDevPanel ? '#4fc3f7' : 'rgba(79, 195, 247, 0.15)',
+              border: '1px solid #4fc3f7',
+              color: showDevPanel ? '#000' : '#4fc3f7',
+              padding: '4px 14px',
+              borderRadius: '4px',
+              cursor: 'pointer',
+              fontSize: '11px',
+              fontFamily: 'Georgia, serif',
+              letterSpacing: '1px',
+              textTransform: 'uppercase',
+              transition: 'background 0.2s',
+            }}
+          >
+            Dev
+          </motion.button>
+
+          <motion.button
+            whileHover={{ scale: 1.05, boxShadow: '0 0 12px rgba(255,183,77,0.4)' }}
+            whileTap={{ scale: 0.95 }}
+            onClick={toggleFlyMode}
+            style={{
+              background: flyMode ? '#ffb74d' : 'rgba(255, 183, 77, 0.15)',
+              border: '1px solid #ffb74d',
+              color: flyMode ? '#000' : '#ffb74d',
+              padding: '4px 14px',
+              borderRadius: '4px',
+              cursor: 'pointer',
+              fontSize: '11px',
+              fontFamily: 'Georgia, serif',
+              letterSpacing: '1px',
+              textTransform: 'uppercase',
+              transition: 'background 0.2s',
+            }}
+          >
+            {flyMode ? 'Fly: ON' : 'Fly'}
+          </motion.button>
+
+          <motion.button
+            whileHover={{ scale: 1.05, boxShadow: '0 0 12px rgba(156,39,176,0.4)' }}
+            whileTap={{ scale: 0.95 }}
+            onClick={toggleMute}
+            style={{
+              background: muted ? '#9c27b0' : 'rgba(156, 39, 176, 0.15)',
+              border: '1px solid #9c27b0',
+              color: muted ? '#fff' : '#9c27b0',
+              padding: '4px 14px',
+              borderRadius: '4px',
+              cursor: 'pointer',
+              fontSize: '11px',
+              fontFamily: 'Georgia, serif',
+              letterSpacing: '1px',
+              textTransform: 'uppercase',
+              transition: 'background 0.2s',
+            }}
+          >
+            {muted ? 'Muted' : 'Sound'}
+          </motion.button>
+
+          <motion.button
+            whileHover={{ scale: 1.05, boxShadow: '0 0 12px rgba(76,175,80,0.4)' }}
+            whileTap={{ scale: 0.95 }}
+            onClick={handleSave}
+            style={{
+              background: 'rgba(76, 175, 80, 0.15)',
+              border: '1px solid #4caf50',
+              color: '#4caf50',
+              padding: '4px 14px',
+              borderRadius: '4px',
+              cursor: 'pointer',
+              fontSize: '11px',
+              fontFamily: 'Georgia, serif',
+              letterSpacing: '1px',
+              textTransform: 'uppercase',
+              transition: 'background 0.2s',
+            }}
+          >
+            Save
+          </motion.button>
+
+          <motion.button
+            whileHover={{ scale: 1.05, boxShadow: '0 0 12px rgba(33,150,243,0.4)' }}
+            whileTap={{ scale: 0.95 }}
+            onClick={handleLoad}
+            style={{
+              background: 'rgba(33, 150, 243, 0.15)',
+              border: '1px solid #2196f3',
+              color: '#2196f3',
+              padding: '4px 14px',
+              borderRadius: '4px',
+              cursor: 'pointer',
+              fontSize: '11px',
+              fontFamily: 'Georgia, serif',
+              letterSpacing: '1px',
+              textTransform: 'uppercase',
+              transition: 'background 0.2s',
+            }}
+          >
+            Load
+          </motion.button>
+
+          {saveFeedback && (
+            <motion.span
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              style={{
+                fontSize: '10px',
+                color: '#4caf50',
+                fontStyle: 'italic',
+                whiteSpace: 'nowrap',
+              }}
+            >
+              {saveFeedback}
+            </motion.span>
+          )}
+        </div>
 
         {/* Center: Era Timeline */}
         <div

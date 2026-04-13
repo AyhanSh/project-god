@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react'
 import { Html } from '@react-three/drei'
 import { useGameStore } from '@/store/useGameStore'
 
-export default function SoulDialogueBubble({ soulId, soulName, aura }) {
+export default function SoulDialogueBubble({ soulId, soulName, aura, visible = true }) {
   const conversations = useGameStore((s) => s.activeConversations)
   const [lineIndex, setLineIndex] = useState(0)
 
@@ -22,7 +22,7 @@ export default function SoulDialogueBubble({ soulId, soulName, aura }) {
     return () => clearInterval(timer)
   }, [convo?.timestamp])
 
-  if (!convo) return null
+  if (!convo || !visible) return null
 
   const isSoulA = convo.soulA.id === soulId
   const lines = isSoulA

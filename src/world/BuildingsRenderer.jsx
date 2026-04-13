@@ -23,10 +23,11 @@ export default function BuildingsRenderer() {
             {/* Wireframe scaffolding for in-progress buildings */}
             {progress < 1 && (() => {
               const size = BUILDING_SIZES[building.type] || { width: 2, depth: 2, height: 3 }
-              const h = size.height
+              const s = 2 // matches BuildingFactory default scale
+              const h = size.height * s
               return (
                 <mesh position={[pos[0], pos[1] + h * 0.5, pos[2]]}>
-                  <boxGeometry args={[size.width + 0.4, h + 0.5, size.depth + 0.4]} />
+                  <boxGeometry args={[size.width * s + 0.4, h + 0.5, size.depth * s + 0.4]} />
                   <meshBasicMaterial color="#a08040" wireframe transparent opacity={0.25} />
                 </mesh>
               )

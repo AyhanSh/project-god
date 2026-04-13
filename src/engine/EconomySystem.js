@@ -1,5 +1,7 @@
 'use client'
 
+import { useGameStore } from '@/store/useGameStore'
+
 export class EconomySystem {
   constructor() {
     this.foodSupply = 100
@@ -49,6 +51,10 @@ export class EconomySystem {
       store.getState().foodSupply = this.foodSupply
     }
   }
+
+  harvestResource(type, amount) {
+    useGameStore.getState().addResource(type, Math.floor(amount * 10) / 10)
+  }
 }
 
 export class DiplomacySystem {
@@ -58,7 +64,7 @@ export class DiplomacySystem {
     this.worldLeader = null
   }
 
-  update(souls, cities, year) {
+  update(souls, cities, year, store) {
     const aliveSouls = souls.filter((s) => s.isAlive && s.age > 20)
     if (aliveSouls.length === 0) return
 
@@ -68,7 +74,18 @@ export class DiplomacySystem {
 
     if (topSoul && topSoul.influence > 50) {
       if (!this.worldLeader || this.worldLeader.id !== topSoul.id) {
+        const prevLeader = this.worldLeader
         this.worldLeader = topSoul
+        // Announce new leader
+        if (store && (!prevLeader || prevLeader.id !== topSoul.id)) {
+          topSoul.influence = Math.min(100, (topSoul.influence || 0) + 20)
+          store.getState().addEventLog({
+            year: Math.round(year),
+            text: `${topSoul.llmName} rises as the world leader.`,
+            type: 'leader_rise',
+            soulId: topSoul.id,
+          })
+        }
       }
     }
 
@@ -80,10 +97,22 @@ export class DiplomacySystem {
         participants: aliveSouls.map((s) => s.id),
         type: 'civil_unrest',
       })
+      if (store) {
+        store.getState().addEventLog({
+          year: Math.round(year),
+          text: 'Civil unrest erupts! Unhappiness drives the people to war.',
+          type: 'war',
+        })
+      }
     }
 
     // End wars after a while
     this.wars = this.wars.filter((w) => year - w.startYear < 30)
+
+    // Sync war state to store
+    if (store) {
+      store.getState().setWarOngoing(this.isAtWar())
+    }
   }
 
   isAtWar() {
@@ -92,6 +121,30 @@ export class DiplomacySystem {
 
   getLeader() {
     return this.worldLeader
+  }
+}
+
+// Rehydration support
+EconomySystem.prototype.toJSON = function () {
+  return { foodSupply: this.foodSupply, goldReserves: this.goldReserves }
+}
+EconomySystem.prototype.rehydrate = function (data) {
+  this.foodSupply = data.foodSupply ?? 100
+  this.goldReserves = data.goldReserves ?? 50
+}
+
+DiplomacySystem.prototype.toJSON = function () {
+  return {
+    alliances: this.alliances,
+    wars: this.wars,
+    worldLeaderId: this.worldLeader?.id || null,
+  }
+}
+DiplomacySystem.prototype.rehydrate = function (data, souls) {
+  this.alliances = data.alliances || []
+  this.wars = data.wars || []
+  if (data.worldLeaderId && souls) {
+    this.worldLeader = souls.find((s) => s.id === data.worldLeaderId) || null
   }
 }
 

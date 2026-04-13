@@ -14,15 +14,8 @@ const ERA_CLOTH = {
   singularity:  { primary: '#7040b0', secondary: '#5020a0', belt: '#9060d0', shoe: '#402080' },
 }
 
-// ─── Skin tone per soul ──────────────────────────────────────────────────────
-const SOUL_SKIN = {
-  soul_claude:  '#cc785c',
-  soul_gpt:     '#c8a882',
-  soul_gemini:  '#8d6e4a',
-  soul_llama:   '#b8956a',
-  soul_mistral: '#c09070',
-  soul_palm:    '#c4a078',
-}
+// ─── Default skin tone (used when soul has no skinTone field) ────────────────
+const DEFAULT_SKIN = '#c8a882'
 
 // ─── Build human mesh group (imperative Three.js — called once per soul) ──────
 function buildHuman(skinColor, hairColor, cloth, aura, era) {
@@ -142,6 +135,38 @@ function buildHuman(skinColor, hairColor, cloth, aura, era) {
     arms[side] = armGroup
   }
 
+  // HELD TOOLS (attached to right arm, shown only during relevant animations)
+  const woodMat = new THREE.MeshLambertMaterial({ color: '#6b4226' })
+  const metalMat = new THREE.MeshLambertMaterial({ color: '#8a8a8a' })
+
+  // Axe — handle + forward-facing blade
+  const axeGroup = new THREE.Group()
+  axeGroup.position.set(0, -0.68, 0.06)
+  const axeHandle = new THREE.Mesh(new THREE.CylinderGeometry(0.018, 0.018, 0.44, 5), woodMat)
+  axeHandle.position.set(0, -0.22, 0)
+  axeGroup.add(axeHandle)
+  const axeBlade = new THREE.Mesh(new THREE.BoxGeometry(0.025, 0.11, 0.16), metalMat)
+  axeBlade.position.set(0, -0.43, -0.07)
+  axeGroup.add(axeBlade)
+  axeGroup.visible = false
+  arms.R.add(axeGroup)
+
+  // Pickaxe — handle + forward-facing head + pick point
+  const pickGroup = new THREE.Group()
+  pickGroup.position.set(0, -0.68, 0.06)
+  const pickHandle = new THREE.Mesh(new THREE.CylinderGeometry(0.018, 0.018, 0.48, 5), woodMat)
+  pickHandle.position.set(0, -0.24, 0)
+  pickGroup.add(pickHandle)
+  const pickHead = new THREE.Mesh(new THREE.BoxGeometry(0.03, 0.05, 0.26), metalMat)
+  pickHead.position.set(0, -0.48, 0)
+  pickGroup.add(pickHead)
+  const pickTip = new THREE.Mesh(new THREE.ConeGeometry(0.028, 0.09, 4), metalMat)
+  pickTip.position.set(0, -0.48, -0.17)
+  pickTip.rotation.x = -Math.PI / 2
+  pickGroup.add(pickTip)
+  pickGroup.visible = false
+  arms.R.add(pickGroup)
+
   // LEGS
   const legs = {}
   for (const side of ['L', 'R']) {
@@ -169,7 +194,7 @@ function buildHuman(skinColor, hairColor, cloth, aura, era) {
     legs[side] = legGroup
   }
 
-  return { group, head, arms, legs, torso }
+  return { group, head, arms, legs, torso, axe: axeGroup, pickaxe: pickGroup }
 }
 
 // ─── Dispose all geometries and materials in a group ─────────────────────────
@@ -195,7 +220,11 @@ function animateHuman(parts, animName, t) {
   for (const p of [arms.L, arms.R, legs.L, legs.R, head]) {
     if (p) { p.rotation.x = 0; p.rotation.z = 0; p.rotation.y = 0 }
   }
-  if (group) { group.position.y = 0; group.rotation.y = 0 }
+  if (group) { group.position.y = 0; group.rotation.x = 0; group.rotation.y = 0; group.rotation.z = 0 }
+
+  // Toggle held tools
+  if (parts.axe) parts.axe.visible = (animName === 'chop_tree')
+  if (parts.pickaxe) parts.pickaxe.visible = (animName === 'mine')
 
   switch (animName) {
     case 'idle': {
@@ -233,7 +262,7 @@ function animateHuman(parts, animName, t) {
       arms.R.rotation.z = -0.35
       legs.L.rotation.x = 0.45
       legs.R.rotation.x = 0.45
-      group.position.y = -0.18
+      group.position.y = 0
       head.rotation.x = 0.35 + Math.sin(t * 1.2) * 0.05
       break
     }
@@ -261,11 +290,105 @@ function animateHuman(parts, animName, t) {
       head.rotation.z = Math.sin(t * 4) * 0.15
       break
     }
+    case 'swim': {
+      // Body face-down horizontal, freestyle crawl stroke
+      group.rotation.x = Math.PI / 2 - 0.25  // face-down, head slightly raised
+      group.position.y = 0.3  // float above group origin (water surface)
+
+      const stroke = Math.sin(t * 3.5)
+      const kick = Math.sin(t * 6)
+
+      // Alternating arm crawl
+      arms.L.rotation.x = -0.8 + stroke * 1.0
+      arms.R.rotation.x = -0.8 - stroke * 1.0
+      arms.L.rotation.z = 0.4
+      arms.R.rotation.z = -0.4
+
+      // Flutter kick
+      legs.L.rotation.x = kick * 0.4
+      legs.R.rotation.x = -kick * 0.4
+
+      // Head turns to breathe
+      head.rotation.y = Math.sin(t * 1.75) * 0.3
+      head.rotation.x = -0.4  // look forward (relative to tilted body)
+      break
+    }
+    case 'talk': {
+      // Standing, gesturing hands, head nodding — conversation animation
+      const gesture = Math.sin(t * 2.5)
+      const nod = Math.sin(t * 1.8)
+      // Right arm gestures up and down
+      arms.R.rotation.x = -0.7 + gesture * 0.4
+      arms.R.rotation.z = -0.25
+      // Left arm smaller complementary gesture
+      arms.L.rotation.x = -0.4 - gesture * 0.2
+      arms.L.rotation.z = 0.2
+      // Head nods and tilts
+      head.rotation.x = nod * 0.12
+      head.rotation.y = Math.sin(t * 1.2) * 0.15
+      head.rotation.z = Math.sin(t * 0.9) * 0.06
+      // Slight weight shift
+      group.position.y = Math.abs(Math.sin(t * 1.5)) * 0.01
+      break
+    }
     case 'sleep': {
       arms.L.rotation.z = 0.3
       arms.R.rotation.z = -0.3
       head.rotation.z = 0.2
       head.rotation.x = 0.1
+      break
+    }
+    case 'chop_tree': {
+      const chop = Math.sin(t * 3)
+      // Only right arm swings (holding axe)
+      arms.R.rotation.x = -1.0 + chop * 0.7
+      arms.L.rotation.z = 0.08
+      if (torso) torso.rotation.x = -chop * 0.15
+      legs.L.rotation.x = 0.1
+      legs.R.rotation.x = 0.1
+      group.position.y = Math.max(0, -chop * 0.05)
+      break
+    }
+    case 'mine': {
+      group.position.y = 0
+      // Only right arm swings (holding pickaxe)
+      arms.R.rotation.x = -0.8 + Math.sin(t * 2.5) * 0.9
+      arms.L.rotation.z = 0.08
+      if (torso) torso.rotation.x = -0.3 + Math.sin(t * 2.5) * 0.1
+      head.rotation.x = 0.2
+      break
+    }
+    case 'craft': {
+      arms.L.rotation.x = -0.6 + Math.sin(t * 4) * 0.3
+      arms.R.rotation.x = -0.6 + Math.sin(t * 4 + 0.5) * 0.3
+      arms.L.rotation.z = -0.2
+      arms.R.rotation.z = 0.2
+      if (torso) torso.rotation.x = -0.15
+      head.rotation.x = 0.1
+      break
+    }
+    case 'build': {
+      arms.L.rotation.x = -0.3 + Math.sin(t * 3.5) * 0.8
+      arms.R.rotation.x = -0.5 + Math.sin(t * 3.5 + 0.3) * 0.6
+      if (torso) torso.rotation.x = Math.sin(t * 3.5) * 0.1
+      legs.L.rotation.x = 0.05
+      legs.R.rotation.x = -0.05
+      break
+    }
+    case 'greet': {
+      // Right arm raised high, waving side to side
+      const wave = Math.sin(t * 3.5)
+      arms.R.rotation.x = -2.6                   // arm straight up
+      arms.R.rotation.z = -0.15 + wave * 0.25    // gentle wave, centered closer to body
+      // Left arm relaxed at side
+      arms.L.rotation.z = 0.08
+      arms.L.rotation.x = 0.05
+      // Slight body lean and head tilt toward the person being greeted
+      head.rotation.y = 0.15
+      head.rotation.z = Math.sin(t * 2) * 0.08
+      if (torso) torso.rotation.z = 0.06
+      // Small weight shift
+      group.position.y = Math.abs(Math.sin(t * 2)) * 0.02
       break
     }
     default: {
@@ -286,6 +409,7 @@ export default function HumanModel({
   selected = false,
   age = 25,
   soulId = '',
+  skinTone,
   onClick,
 }) {
   const outerRef = useRef()
@@ -304,7 +428,7 @@ export default function HumanModel({
     if (!parent) return
 
     const cloth = ERA_CLOTH[era] || ERA_CLOTH.ancient
-    const skinColor = SOUL_SKIN[soulId] || '#c8a882'
+    const skinColor = skinTone || DEFAULT_SKIN
     const hairColor = age > 60 ? '#aaaaaa' : '#2a1a0a'
 
     const parts = buildHuman(skinColor, hairColor, cloth, aura, era)
@@ -316,7 +440,7 @@ export default function HumanModel({
       disposeGroup(parts.group)
       partsRef.current = null
     }
-  }, [era, soulId, aura, age > 60])
+  }, [era, skinTone, aura, age > 60])
 
   const ageScale = age < 16 ? 0.6 + (age / 16) * 0.4 : 1.0
 

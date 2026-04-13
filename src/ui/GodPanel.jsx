@@ -3,82 +3,36 @@
 import { useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { useGameStore } from '@/store/useGameStore'
-
-const POWERS = [
-  {
-    id: 'wrath',
-    icon: '⚡',
-    name: 'Divine Wrath',
-    cost: 200,
-    description: 'Strike a soul with lightning',
-    needsTarget: true,
-  },
-  {
-    id: 'message',
-    icon: '📜',
-    name: 'Divine Message',
-    cost: 50,
-    description: 'Speak directly to a soul',
-    needsTarget: true,
-    needsText: true,
-  },
-  {
-    id: 'blessing',
-    icon: '✨',
-    name: 'Divine Blessing',
-    cost: 100,
-    description: 'Fill a soul with divine energy',
-    needsTarget: true,
-  },
-  {
-    id: 'pestilence',
-    icon: '🦠',
-    name: 'Send Pestilence',
-    cost: 500,
-    description: 'Release a plague upon a city',
-    needsTarget: false,
-  },
-  {
-    id: 'inspiration',
-    icon: '💡',
-    name: 'Divine Inspiration',
-    cost: 300,
-    description: 'Give a soul a breakthrough idea',
-    needsTarget: true,
-  },
-  {
-    id: 'matchmaking',
-    icon: '💕',
-    name: 'Divine Matchmaking',
-    cost: 150,
-    description: 'Cause two souls to fall in love',
-    needsTarget: true,
-  },
-  {
-    id: 'truth',
-    icon: '🔮',
-    name: 'Reveal the Truth',
-    cost: 1000,
-    description: 'Tell a soul what they truly are',
-    needsTarget: true,
-  },
-]
+import { GOD_POWERS } from '@/data/godPowers'
 
 export default function GodPanel() {
   const showGodPanel = useGameStore((s) => s.showGodPanel)
   const godFavor = useGameStore((s) => s.godFavor)
   const spendGodFavor = useGameStore((s) => s.spendGodFavor)
+  const setGodTargeting = useGameStore((s) => s.setGodTargeting)
+  const clearGodTargeting = useGameStore((s) => s.clearGodTargeting)
+  const currentEra = useGameStore((s) => s.currentEra)
 
   const [activePower, setActivePower] = useState(null)
   const [messageText, setMessageText] = useState('')
   const [feedback, setFeedback] = useState(null)
 
+  const showFeedback = (msg) => {
+    setFeedback(msg)
+    setTimeout(() => setFeedback(null), 3000)
+  }
+
   const handlePowerClick = (power) => {
     if (power.cost > godFavor) return
+    if (power.prerequisite && currentEra !== power.prerequisite) {
+      showFeedback(`Requires ${power.prerequisite} era`)
+      return
+    }
 
     if (activePower?.id === power.id) {
       setActivePower(null)
       setMessageText('')
+      clearGodTargeting()
       return
     }
 
@@ -86,22 +40,41 @@ export default function GodPanel() {
     setMessageText('')
     setFeedback(null)
 
-    if (!power.needsTarget && !power.needsText) {
-      // Instant-use power with no target
-      spendGodFavor(power.cost)
-      setFeedback(`${power.icon} ${power.name} activated!`)
+    if (power.targetType === 'city') {
+      // City-wide powers fire immediately (single city world)
+      setGodTargeting({ powerId: power.id, type: 'city' })
+      // Will be invoked from SoulEntity/GameWorld via store
+      import('@/engine/GodPowerEngine').then(({ godPowerEngine }) => {
+        import('@/engine/WorldEngine').then(({ getWorldEngine }) => {
+          const store = useGameStore
+          const worldEngine = getWorldEngine(store)
+          const result = godPowerEngine.invoke(power.id, {}, worldEngine, store)
+          if (result.success) {
+            spendGodFavor(power.cost)
+            showFeedback(`${power.icon} ${power.name} activated!`)
+          } else {
+            showFeedback(result.reason || 'Failed')
+          }
+        })
+      })
       setActivePower(null)
-      setTimeout(() => setFeedback(null), 3000)
+      clearGodTargeting()
+    } else if (power.requiresInput) {
+      // Show text input — don't set targeting yet
+      setGodTargeting({ powerId: power.id, type: 'input' })
+    } else if (power.targetType === 'soul') {
+      setGodTargeting({ powerId: power.id, type: 'soul' })
+    } else if (power.targetType === 'two_souls') {
+      setGodTargeting({ powerId: power.id, type: 'two_souls' })
     }
   }
 
   const handleSendMessage = () => {
     if (!messageText.trim() || !activePower) return
-    spendGodFavor(activePower.cost)
-    setFeedback(`${activePower.icon} "${messageText}" sent.`)
-    setActivePower(null)
+    // 'speak' power — need to click a soul after entering text
+    setGodTargeting({ powerId: activePower.id, type: 'soul', text: messageText })
+    showFeedback(`Click a soul to deliver: "${messageText.slice(0, 40)}"`)
     setMessageText('')
-    setTimeout(() => setFeedback(null), 4000)
   }
 
   const panelStyle = {
@@ -182,7 +155,16 @@ export default function GodPanel() {
                 )}
                 {activePower && !feedback && (
                   <div style={{ padding: '8px 14px' }}>
-                    {activePower.needsTarget && !activePower.needsText && (
+                    {activePower.targetType === 'two_souls' && (
+                      <div style={{
+                        fontSize: '11px',
+                        color: '#f0c040',
+                        fontStyle: 'italic',
+                      }}>
+                        Click two souls to target with {activePower.name}
+                      </div>
+                    )}
+                    {activePower.targetType === 'soul' && !activePower.requiresInput && (
                       <div style={{
                         fontSize: '11px',
                         color: '#f0c040',
@@ -191,7 +173,7 @@ export default function GodPanel() {
                         Click a soul to target with {activePower.name}
                       </div>
                     )}
-                    {activePower.needsText && (
+                    {activePower.requiresInput && (
                       <div>
                         <div style={{
                           fontSize: '11px',
@@ -256,8 +238,8 @@ export default function GodPanel() {
             maxHeight: '260px',
             overflowY: 'auto',
           }}>
-            {POWERS.map((power) => {
-              const isDisabled = power.cost > godFavor
+            {GOD_POWERS.map((power) => {
+              const isDisabled = power.cost > godFavor || (power.prerequisite && currentEra !== power.prerequisite)
               const isActive = activePower?.id === power.id
               return (
                 <motion.button

@@ -2,6 +2,7 @@
 
 import { soulMind, THOUGHT_TYPES } from './SoulMind'
 import { relationshipManager } from './SoulRelations'
+import { getSoulPosition } from './SoulPositionRegistry'
 import { useGameStore } from '@/store/useGameStore'
 
 export class InteractionEngine {
@@ -9,28 +10,48 @@ export class InteractionEngine {
     this.interactionCooldowns = {}
     this.activeConversations = []
     this.activeCombats = []
+    this.pendingInteractions = new Set() // soul IDs with in-flight AI calls
   }
 
   async checkProximityInteractions(souls, currentYear, world) {
     const aliveSouls = souls.filter((s) => s.isAlive)
 
+    // Skip souls already busy (in conversation, combat, or pending AI call)
+    const busyIds = new Set(this.pendingInteractions)
+    for (const c of this.activeConversations) {
+      busyIds.add(c.soulA.id)
+      busyIds.add(c.soulB.id)
+    }
+    for (const c of this.activeCombats) {
+      busyIds.add(c.soulA.id)
+      busyIds.add(c.soulB.id)
+    }
+
     for (let i = 0; i < aliveSouls.length; i++) {
       for (let j = i + 1; j < aliveSouls.length; j++) {
         const soulA = aliveSouls[i]
         const soulB = aliveSouls[j]
-        const distance = this._getDistance(soulA.position, soulB.position)
+        if (busyIds.has(soulA.id) || busyIds.has(soulB.id)) continue
 
-        if (distance < 5.0 && this._shouldInteract(soulA, soulB, currentYear)) {
+        const distance = this._getDistance(soulA.position, soulB.position, soulA.id, soulB.id)
+
+        const sameLocation = soulA.currentLocation && soulA.currentLocation === soulB.currentLocation
+        if ((distance < 30 || sameLocation) && this._shouldInteract(soulA, soulB, currentYear)) {
           await this.triggerInteraction(soulA, soulB, currentYear, world)
         }
       }
     }
   }
 
-  _getDistance(posA, posB) {
-    if (!posA || !posB) return Infinity
-    const dx = (posA.x || posA[0] || 0) - (posB.x || posB[0] || 0)
-    const dz = (posA.z || posA[2] || 0) - (posB.z || posB[2] || 0)
+  _getDistance(posA, posB, soulAId, soulBId) {
+    // Prefer live registry positions (updated per-frame) over stale soul.position
+    const liveA = soulAId ? getSoulPosition(soulAId) : null
+    const liveB = soulBId ? getSoulPosition(soulBId) : null
+    const a = liveA || posA
+    const b = liveB || posB
+    if (!a || !b) return Infinity
+    const dx = (a.x || a[0] || 0) - (b.x || b[0] || 0)
+    const dz = (a.z || a[2] || 0) - (b.z || b[2] || 0)
     return Math.sqrt(dx * dx + dz * dz)
   }
 
@@ -55,96 +76,104 @@ export class InteractionEngine {
       return this._triggerCombat(soulA, soulB, currentYear, world)
     }
 
-    // Determine interaction type
-    let interactionType
-    if (rel.type === 'stranger') interactionType = 'first_meeting'
-    else if (rel.type === 'lover' || rel.type === 'spouse') interactionType = Math.random() > 0.7 ? 'affection' : 'conversation'
-    else if ((rel.type === 'friend' || rel.type === 'close_friend') && Math.random() < 0.1) interactionType = 'gift'
-    else interactionType = 'conversation'
+    // Mark souls as busy during async AI calls
+    this.pendingInteractions.add(soulA.id)
+    this.pendingInteractions.add(soulB.id)
 
-    // Set up soul context for AI calls
-    const soulAContext = this._prepareSoulForAI(soulA, soulB, rel, currentYear, world)
-    const soulBContext = this._prepareSoulForAI(soulB, soulA, rel, currentYear, world)
+    try {
+      // Determine interaction type
+      let interactionType
+      if (rel.type === 'stranger') interactionType = 'first_meeting'
+      else if (rel.type === 'lover' || rel.type === 'spouse') interactionType = Math.random() > 0.7 ? 'affection' : 'conversation'
+      else if ((rel.type === 'friend' || rel.type === 'close_friend') && Math.random() < 0.1) interactionType = 'gift'
+      else interactionType = 'conversation'
 
-    // AI conversation
-    const opening = await soulMind.think(soulAContext, THOUGHT_TYPES.CONVERSATION_OPENER, {
-      otherSoul: soulBContext,
-      world,
-    })
+      // Set up soul context for AI calls
+      const soulAContext = this._prepareSoulForAI(soulA, soulB, rel, currentYear, world)
+      const soulBContext = this._prepareSoulForAI(soulB, soulA, rel, currentYear, world)
 
-    const response = await soulMind.think(soulBContext, THOUGHT_TYPES.CONVERSATION_REPLY, {
-      otherSoul: soulAContext,
-      theirMessage: opening.text,
-      world,
-    })
-
-    // Third dialogue turn — soul A replies to soul B
-    const followUp = await soulMind.think(soulAContext, THOUGHT_TYPES.CONVERSATION_REPLY, {
-      otherSoul: soulBContext,
-      theirMessage: response.text,
-      world,
-      priority: 8,
-    })
-
-    // Analyze sentiment (simple keyword-based)
-    const sentiment = this._analyzeSentiment(opening.text + ' ' + response.text + ' ' + followUp.text)
-
-    // Update relationship
-    rel.updateFromInteraction({
-      type: interactionType,
-      year: currentYear,
-      summary: opening.text.slice(0, 80),
-      sentiment: sentiment.score,
-      dialogue: { opener: opening.text, reply: response.text, followUp: followUp.text },
-    })
-
-    // Gift-giving happiness boost
-    if (interactionType === 'gift') {
-      soulA.happiness = Math.min(100, soulA.happiness + 3)
-      soulB.happiness = Math.min(100, soulB.happiness + 5)
-    }
-
-    // Add to memories if significant
-    if (sentiment.isSignificant) {
-      soulA.memory?.addMemory({
-        year: currentYear,
-        type: 'conversation',
-        text: `Spoke with ${soulB.llmName}: "${response.text.slice(0, 100)}"`,
-        emotionalWeight: sentiment.score * 2,
-        personsInvolved: [soulB.id],
+      // AI conversation
+      const opening = await soulMind.think(soulAContext, THOUGHT_TYPES.CONVERSATION_OPENER, {
+        otherSoul: soulBContext,
+        world,
       })
-      soulB.memory?.addMemory({
-        year: currentYear,
-        type: 'conversation',
-        text: `Spoke with ${soulA.llmName}: "${opening.text.slice(0, 100)}"`,
-        emotionalWeight: sentiment.score * 2,
-        personsInvolved: [soulA.id],
+
+      const response = await soulMind.think(soulBContext, THOUGHT_TYPES.CONVERSATION_REPLY, {
+        otherSoul: soulAContext,
+        theirMessage: opening.text,
+        world,
       })
+
+      // Third dialogue turn — soul A replies to soul B
+      const followUp = await soulMind.think(soulAContext, THOUGHT_TYPES.CONVERSATION_REPLY, {
+        otherSoul: soulBContext,
+        theirMessage: response.text,
+        world,
+        priority: 8,
+      })
+
+      // Analyze sentiment (simple keyword-based)
+      const sentiment = this._analyzeSentiment(opening.text + ' ' + response.text + ' ' + followUp.text)
+
+      // Update relationship
+      rel.updateFromInteraction({
+        type: interactionType,
+        year: currentYear,
+        summary: opening.text.slice(0, 80),
+        sentiment: sentiment.score,
+        dialogue: { opener: opening.text, reply: response.text, followUp: followUp.text },
+      })
+
+      // Gift-giving happiness boost
+      if (interactionType === 'gift') {
+        soulA.happiness = Math.min(100, soulA.happiness + 3)
+        soulB.happiness = Math.min(100, soulB.happiness + 5)
+      }
+
+      // Add to memories if significant
+      if (sentiment.isSignificant) {
+        soulA.memory?.addMemory({
+          year: currentYear,
+          type: 'conversation',
+          text: `Spoke with ${soulB.llmName}: "${response.text.slice(0, 100)}"`,
+          emotionalWeight: sentiment.score * 2,
+          personsInvolved: [soulB.id],
+        })
+        soulB.memory?.addMemory({
+          year: currentYear,
+          type: 'conversation',
+          text: `Spoke with ${soulA.llmName}: "${opening.text.slice(0, 100)}"`,
+          emotionalWeight: sentiment.score * 2,
+          personsInvolved: [soulA.id],
+        })
+      }
+
+      // Store active conversation for display
+      const conversation = {
+        soulA: { id: soulA.id, name: soulA.llmName, text: opening.text, followUp: followUp.text },
+        soulB: { id: soulB.id, name: soulB.llmName, text: response.text },
+        year: currentYear,
+        type: interactionType,
+        timestamp: Date.now(),
+      }
+      this.activeConversations.push(conversation)
+
+      // Clean old conversations and sync to store
+      const now = Date.now()
+      this.activeConversations = this.activeConversations.filter(
+        (c) => now - c.timestamp < 15000
+      )
+      useGameStore.getState().setActiveConversations([...this.activeConversations])
+
+      // Check for love emergence
+      if (rel.affection > 60 && rel.trust > 40 && rel.type !== 'spouse' && Math.random() < 0.1) {
+        await this._triggerLoveEvent(soulA, soulB, currentYear, world)
+      }
+      return conversation
+    } finally {
+      this.pendingInteractions.delete(soulA.id)
+      this.pendingInteractions.delete(soulB.id)
     }
-
-    // Store active conversation for display
-    const conversation = {
-      soulA: { id: soulA.id, name: soulA.llmName, text: opening.text, followUp: followUp.text },
-      soulB: { id: soulB.id, name: soulB.llmName, text: response.text },
-      year: currentYear,
-      type: interactionType,
-      timestamp: Date.now(),
-    }
-    this.activeConversations.push(conversation)
-
-    // Clean old conversations and sync to store
-    const now = Date.now()
-    this.activeConversations = this.activeConversations.filter(
-      (c) => now - c.timestamp < 15000
-    )
-    useGameStore.getState().setActiveConversations([...this.activeConversations])
-
-    // Check for love emergence
-    if (rel.affection > 60 && rel.trust > 40 && rel.type !== 'spouse' && Math.random() < 0.1) {
-      await this._triggerLoveEvent(soulA, soulB, currentYear, world)
-    }
-
-    return conversation
   }
 
   _prepareSoulForAI(soul, otherSoul, rel, currentYear, world) {
@@ -296,6 +325,30 @@ export class InteractionEngine {
 
   getActiveConversations() {
     return this.activeConversations
+  }
+
+  /**
+   * Remove stale conversations (>12s) and combats (past duration).
+   * Called every tick from WorldEngine so souls never get stuck.
+   */
+  cleanup() {
+    const now = Date.now()
+    const prevConvoLen = this.activeConversations.length
+    const prevCombatLen = this.activeCombats.length
+
+    this.activeConversations = this.activeConversations.filter(
+      (c) => now - c.timestamp < 12000
+    )
+    this.activeCombats = this.activeCombats.filter(
+      (c) => now - c.timestamp < (c.duration || 8000)
+    )
+
+    if (this.activeConversations.length !== prevConvoLen) {
+      useGameStore.getState().setActiveConversations([...this.activeConversations])
+    }
+    if (this.activeCombats.length !== prevCombatLen) {
+      useGameStore.getState().setActiveCombats([...this.activeCombats])
+    }
   }
 }
 

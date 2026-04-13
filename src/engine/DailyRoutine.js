@@ -5,7 +5,8 @@ const DAILY_SCHEDULES = {
   ancient_farmer: [
     { hour: 5, activity: 'wake', animation: 'idle', location: 'home' },
     { hour: 6, activity: 'morning_prayer', animation: 'pray', location: 'temple', thinkChance: 0.3 },
-    { hour: 7, activity: 'work', animation: 'work', location: 'farm', duration: 4, interactChance: 0.4 },
+    { hour: 7, activity: 'chop_trees', animation: 'chop_tree', location: 'forest_edge', duration: 2, interactChance: 0.2 },
+    { hour: 9, activity: 'work', animation: 'work', location: 'farm', duration: 3, interactChance: 0.4 },
     { hour: 12, activity: 'eat', animation: 'idle', location: 'market', socialChance: 0.7 },
     { hour: 13, activity: 'work', animation: 'work', location: 'farm', duration: 4 },
     { hour: 17, activity: 'social', animation: 'idle', location: 'plaza', socialChance: 0.9 },
@@ -14,10 +15,11 @@ const DAILY_SCHEDULES = {
   ],
   ancient_healer: [
     { hour: 5, activity: 'wake', animation: 'idle', location: 'home' },
-    { hour: 6, activity: 'gather_herbs', animation: 'work', location: 'forest', duration: 3 },
-    { hour: 9, activity: 'heal', animation: 'pray', location: 'temple', duration: 4, interactChance: 0.8 },
-    { hour: 13, activity: 'eat', animation: 'idle', location: 'market', socialChance: 0.5 },
-    { hour: 14, activity: 'study', animation: 'idle', location: 'home', thinkChance: 0.6 },
+    { hour: 6, activity: 'gather_herbs', animation: 'work', location: 'forest_edge', duration: 3 },
+    { hour: 9, activity: 'heal', animation: 'pray', location: 'temple', duration: 3, interactChance: 0.8 },
+    { hour: 12, activity: 'eat', animation: 'idle', location: 'market', socialChance: 0.5 },
+    { hour: 13, activity: 'gather_herbs', animation: 'work', location: 'forest_edge', duration: 2 },
+    { hour: 15, activity: 'study', animation: 'idle', location: 'home', thinkChance: 0.6 },
     { hour: 17, activity: 'social', animation: 'idle', location: 'plaza', socialChance: 0.7 },
     { hour: 20, activity: 'meditate', animation: 'pray', location: 'temple', thinkChance: 0.5 },
     { hour: 22, activity: 'sleep', animation: 'sleep', location: 'home' },
@@ -25,6 +27,7 @@ const DAILY_SCHEDULES = {
   ancient_warrior: [
     { hour: 5, activity: 'training', animation: 'fight', location: 'barracks', duration: 3 },
     { hour: 8, activity: 'patrol', animation: 'walk', location: 'perimeter', duration: 4 },
+    { hour: 9, activity: 'mine_ore', animation: 'mine', location: 'quarry', duration: 3 },
     { hour: 12, activity: 'eat', animation: 'idle', location: 'market', socialChance: 0.6 },
     { hour: 14, activity: 'training', animation: 'fight', location: 'barracks', duration: 3 },
     { hour: 17, activity: 'social', animation: 'idle', location: 'plaza', socialChance: 0.8 },
@@ -34,7 +37,7 @@ const DAILY_SCHEDULES = {
   ancient_priest: [
     { hour: 4, activity: 'dawn_prayer', animation: 'pray', location: 'temple', thinkChance: 0.7 },
     { hour: 7, activity: 'teach', animation: 'idle', location: 'temple', duration: 3, interactChance: 0.6 },
-    { hour: 10, activity: 'ritual', animation: 'pray', location: 'temple', duration: 2 },
+    { hour: 10, activity: 'gather_herbs', animation: 'work', location: 'forest_edge', duration: 2 },
     { hour: 12, activity: 'eat', animation: 'idle', location: 'temple' },
     { hour: 14, activity: 'counsel', animation: 'idle', location: 'temple', interactChance: 0.9 },
     { hour: 17, activity: 'meditate', animation: 'pray', location: 'temple', thinkChance: 0.8 },
@@ -52,9 +55,10 @@ const DAILY_SCHEDULES = {
   ],
   ancient_builder: [
     { hour: 5, activity: 'wake', animation: 'idle', location: 'home' },
-    { hour: 6, activity: 'work', animation: 'work', location: 'construction', duration: 6, interactChance: 0.3 },
+    { hour: 6,  activity: 'chop_trees',      animation: 'chop_tree', location: 'forest_edge',   duration: 3, interactChance: 0.2 },
+    { hour: 9,  activity: 'mine_ore',        animation: 'mine',      location: 'cave_entrance', duration: 3 },
     { hour: 12, activity: 'eat', animation: 'idle', location: 'market', socialChance: 0.5 },
-    { hour: 13, activity: 'work', animation: 'work', location: 'construction', duration: 5 },
+    { hour: 13, activity: 'build_structure', animation: 'build',     location: 'construction',  duration: 5 },
     { hour: 18, activity: 'social', animation: 'idle', location: 'plaza', socialChance: 0.6 },
     { hour: 20, activity: 'plan', animation: 'idle', location: 'home', thinkChance: 0.5 },
     { hour: 22, activity: 'sleep', animation: 'sleep', location: 'home' },
@@ -95,7 +99,7 @@ const DAILY_SCHEDULES = {
     { hour: 6, activity: 'wake', animation: 'idle', location: 'home' },
     { hour: 7, activity: 'work', animation: 'work', location: 'workshop', duration: 5, interactChance: 0.4 },
     { hour: 12, activity: 'eat', animation: 'idle', location: 'tavern', socialChance: 0.7 },
-    { hour: 13, activity: 'work', animation: 'work', location: 'workshop', duration: 4 },
+    { hour: 13, activity: 'craft_tools', animation: 'craft', location: 'workshop', duration: 4 },
     { hour: 17, activity: 'social', animation: 'idle', location: 'plaza', socialChance: 0.8 },
     { hour: 20, activity: 'rest', animation: 'idle', location: 'home' },
     { hour: 22, activity: 'sleep', animation: 'sleep', location: 'home' },
@@ -103,7 +107,7 @@ const DAILY_SCHEDULES = {
   renaissance_default: [
     { hour: 7, activity: 'wake', animation: 'idle', location: 'home' },
     { hour: 8, activity: 'study', animation: 'idle', location: 'university', duration: 3, thinkChance: 0.5 },
-    { hour: 11, activity: 'create', animation: 'work', location: 'workshop', duration: 3 },
+    { hour: 11, activity: 'craft_tools', animation: 'craft', location: 'workshop', duration: 3 },
     { hour: 14, activity: 'dine', animation: 'idle', location: 'market', socialChance: 0.7 },
     { hour: 15, activity: 'discuss', animation: 'idle', location: 'plaza', socialChance: 0.9, interactChance: 0.7 },
     { hour: 18, activity: 'evening_salon', animation: 'idle', location: 'theatre', socialChance: 0.8 },
@@ -140,7 +144,8 @@ const DAILY_SCHEDULES = {
   // Ultimate fallback
   default: [
     { hour: 6, activity: 'wake', animation: 'idle', location: 'home' },
-    { hour: 7, activity: 'work', animation: 'work', location: 'workplace', duration: 5 },
+    { hour: 7, activity: 'chop_trees', animation: 'chop_tree', location: 'forest_edge', duration: 2 },
+    { hour: 9, activity: 'work', animation: 'work', location: 'workplace', duration: 3 },
     { hour: 12, activity: 'eat', animation: 'idle', location: 'market', socialChance: 0.5 },
     { hour: 13, activity: 'work', animation: 'work', location: 'workplace', duration: 4 },
     { hour: 17, activity: 'social', animation: 'idle', location: 'plaza', socialChance: 0.7 },
@@ -167,7 +172,8 @@ export function getSoulSchedule(soul, era) {
 // Convert game year to approximate hour of day
 // Each game year is compressed — we cycle through hours based on sub-year fraction
 export function getGameHour(yearFraction) {
-  return Math.floor((yearFraction % 1) * 24)
+  const frac = ((yearFraction % 1) + 1) % 1
+  return Math.floor(frac * 24)
 }
 
 export function getCurrentScheduleEntry(schedule, hour) {
@@ -182,33 +188,38 @@ export function getCurrentScheduleEntry(schedule, hour) {
   return current
 }
 
-// Movement locations — kept within the flat zone (radius ~16)
+// Movement locations — spread across the terrain
 export const LOCATION_POSITIONS = {
   // City-centre locations (within the flat building zone)
-  home: { x: 0, z: 0, range: 4 },
-  market: { x: -6, z: 8, range: 4 },
-  plaza: { x: 0, z: 5, range: 4 },
-  tavern: { x: -7, z: 6, range: 3 },
-  workshop: { x: 5, z: 9, range: 3 },
-  office: { x: 10, z: 7, range: 3 },
-  mind_palace: { x: 0, z: 0, range: 3 },
-  quantum_server: { x: 7, z: 7, range: 3 },
-  arcology: { x: 0, z: 0, range: 5 },
+  home: { x: 0, z: 0, range: 8 },
+  market: { x: -15, z: 18, range: 8 },
+  plaza: { x: 0, z: 12, range: 8 },
+  tavern: { x: -18, z: 14, range: 6 },
+  workshop: { x: 14, z: 22, range: 6 },
+  office: { x: 22, z: 14, range: 6 },
+  mind_palace: { x: 0, z: 0, range: 6 },
+  quantum_server: { x: 16, z: 16, range: 6 },
+  arcology: { x: 0, z: 0, range: 10 },
 
   // Near-city locations (edge of flat zone → gentle hills)
-  temple: { x: 12, z: -10, range: 4 },
-  cathedral: { x: 12, z: -10, range: 4 },
-  castle: { x: 16, z: -5, range: 5 },
-  barracks: { x: 14, z: 6, range: 4 },
-  construction: { x: 8, z: 12, range: 5 },
-  theatre: { x: -10, z: -5, range: 3 },
-  university: { x: 10, z: -14, range: 4 },
+  temple: { x: 50, z: -40, range: 12 },
+  cathedral: { x: 50, z: -40, range: 12 },
+  castle: { x: 65, z: -20, range: 14 },
+  barracks: { x: 55, z: 30, range: 12 },
+  construction: { x: 30, z: 50, range: 4 },
+  theatre: { x: -40, z: -20, range: 10 },
+  university: { x: 40, z: -55, range: 12 },
 
-  // Outer locations (characters explore the terrain)
-  farm: { x: -22, z: -16, range: 8 },
-  forest: { x: -28, z: -22, range: 10 },
-  perimeter: { x: 0, z: 30, range: 8 },
-  park: { x: -18, z: 8, range: 6 },
-  factory: { x: 20, z: 16, range: 6 },
-  bio_dome: { x: -14, z: -14, range: 5 },
+  // Outer locations (characters explore the wider terrain)
+  farm: { x: -100, z: -80, range: 8 },
+  forest: { x: -140, z: -120, range: 10 },
+  perimeter: { x: 0, z: 150, range: 12 },
+  park: { x: -80, z: 40, range: 10 },
+  factory: { x: 90, z: 70, range: 8 },
+  bio_dome: { x: -60, z: -60, range: 10 },
+
+  // Resource gathering locations
+  cave_entrance: { x: -200, z: -160, range: 8 },
+  forest_edge:   { x: -160, z: -120, range: 10 },
+  quarry:        { x: 180,  z: -140, range: 8 },
 }

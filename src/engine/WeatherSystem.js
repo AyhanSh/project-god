@@ -22,31 +22,35 @@ export class WeatherSystem {
     const seasonTemps = { spring: 18, summer: 30, autumn: 14, winter: 2 }
     this.temperature = seasonTemps[this.season] + (Math.random() - 0.5) * 10
 
-    // Random weather events (per tick, so keep probability low)
-    const rand = Math.random()
+    // Skip weather auto-change when dev override is active
+    const devWeather = store ? store.getState().devWeather : null
+    if (devWeather === null) {
+      // Random weather events (per tick, so keep probability low)
+      const rand = Math.random()
 
-    if (rand < 0.002) {
-      this.currentWeather = 'storm'
-      this.stormActive = true
-    } else if (rand < 0.01 && this.season === 'winter') {
-      this.currentWeather = 'snow'
-    } else if (rand < 0.02) {
-      this.currentWeather = 'rain'
-    } else if (rand < 0.04 && this.season === 'summer') {
-      this.currentWeather = 'heatwave'
-      this.drought = true
-    } else if (rand < 0.95 && this.currentWeather !== 'clear') {
-      // Weather gradually clears
-      if (Math.random() < 0.1) {
-        this.currentWeather = 'clear'
-        this.stormActive = false
-        this.drought = false
+      if (rand < 0.002) {
+        this.currentWeather = 'storm'
+        this.stormActive = true
+      } else if (rand < 0.01 && this.season === 'winter') {
+        this.currentWeather = 'snow'
+      } else if (rand < 0.02) {
+        this.currentWeather = 'rain'
+      } else if (rand < 0.04 && this.season === 'summer') {
+        this.currentWeather = 'heatwave'
+        this.drought = true
+      } else if (rand < 0.95 && this.currentWeather !== 'clear') {
+        // Weather gradually clears
+        if (Math.random() < 0.1) {
+          this.currentWeather = 'clear'
+          this.stormActive = false
+          this.drought = false
+        }
       }
     }
 
     // Update store
     if (store) {
-      store.getState().setWeather(this.currentWeather)
+      store.getState().setWeather(devWeather ?? this.currentWeather)
       store.getState().setSeason(this.season)
     }
   }

@@ -1,18 +1,38 @@
 'use client'
 
-import { LLM_SOULS } from '@/data/llmSouls'
+import { LLM_SOULS, createChildSoul } from '@/data/llmSouls'
 import { HISTORICAL_EVENTS, EMERGENT_EVENTS } from '@/data/historicalEvents'
 import { getEraForYear } from '@/data/eras'
 import { SoulMemory } from './SoulMemory'
 import { relationshipManager } from './SoulRelations'
 import { soulMind, THOUGHT_TYPES } from './SoulMind'
 import { interactionEngine } from './InteractionEngine'
-import { getSoulSchedule, getCurrentScheduleEntry, getGameHour } from './DailyRoutine'
+import { getGameHour } from './DailyRoutine'
+import { economySystem } from './EconomySystem'
+import { resolveActionIntent } from './SoulActionIntent'
+import { decideBehavior, buildBehaviorWorldState } from './SoulBehavior'
+import { cityEngine } from './CityEngine'
 import { sampleHeight, WATER_LEVEL, FLAT_RADIUS } from '@/world/Terrain'
 import { generateHeightmap } from '@/world/Terrain'
+import { getSoulPosition } from './SoulPositionRegistry'
 
 // Shared heightmap — same seed as WorldScene
 const worldHeightmap = generateHeightmap(1337)
+
+const HARVEST_MAP = {
+  chop_trees:      { type: 'wood',  rate: 0.3   },
+  mine_ore:        { type: 'ore',   rate: 0.2   },
+  work:            { type: 'wood',  rate: 0.15  },
+  gather_herbs:    { type: 'wood',  rate: 0.1   },
+  open_stall:      { type: 'stone', rate: 0.1   },
+  trade:           { type: 'stone', rate: 0.15  },
+  craft_tools:     { type: 'wood',  rate: -0.05 },
+  copy_texts:      { type: 'wood',  rate: 0.05  },
+  build_structure: { type: 'stone', rate: -0.1  },
+  training:        { type: 'ore',   rate: 0.05  },
+  patrol:          { type: 'ore',   rate: 0.03  },
+  process:         { type: 'ore',   rate: 0.2   },
+}
 
 // Find a valid land position (above water, within flat building zone)
 function findLandPosition(radius = FLAT_RADIUS - 2) {
@@ -48,6 +68,8 @@ export class WorldEngine {
     this.emergentCooldowns = {}
     this.lastTickYear = -3000
     this.lastInteractionCheck = -3000
+    this.lastBreedingCheck = -3000
+    this.coupleBirthCooldowns = {}
     this.lastDeepThink = {}
     this.lastAmbitionUpdate = {}
     this.initialized = false
@@ -56,10 +78,17 @@ export class WorldEngine {
   initialize() {
     if (this.initialized) return
 
-    // Create the 6 souls
-    this.souls = LLM_SOULS.map((soulData) => ({
+    // Create the 2 starter souls (Adam & Eve)
+    this.souls = LLM_SOULS.map((soulData) => this._makeLiveSoul(soulData))
+
+    this.store.getState().setSouls(this.souls)
+    this.initialized = true
+  }
+
+  _makeLiveSoul(soulData, position) {
+    return {
       ...soulData,
-      isAlive: false, // Born when year reaches birthYear
+      isAlive: false,
       age: 0,
       health: 100,
       happiness: 60,
@@ -79,19 +108,16 @@ export class WorldEngine {
       lastMajorEvent: 'The dawn of civilization',
       techLevel: 'stone tools and fire',
       weather: 'clear',
-      position: findLandPosition(12),
+      position: position || findLandPosition(12),
       memory: new SoulMemory(soulData.id),
       memories: [],
       relationships: [],
       currentAmbition: null,
       lifespan: null,
       deathYear: null,
-      generation: 1,
       latestThought: null,
-    }))
-
-    this.store.getState().setSouls(this.souls)
-    this.initialized = true
+      actionLog: [],
+    }
   }
 
   tick(currentYear) {
@@ -115,11 +141,20 @@ export class WorldEngine {
       this._checkInteractions(currentYear, worldContext)
     }
 
+    // Check breeding (every ~2 game years)
+    if (currentYear - this.lastBreedingCheck >= 2) {
+      this.lastBreedingCheck = currentYear
+      this._checkBreeding(currentYear, era)
+    }
+
     // Check historical events
     this._checkHistoricalEvents(currentYear, era, worldContext)
 
     // Check emergent events
     this._checkEmergentEvents(currentYear, worldContext)
+
+    // Clean up stale conversations and combats
+    interactionEngine.cleanup()
 
     // Check if war has ended
     if (this.warEndYear && currentYear > this.warEndYear) {
@@ -145,17 +180,35 @@ export class WorldEngine {
     soul.currentEra = era.name
     soul.weather = worldContext.weather
 
-    // Update schedule
-    const schedule = getSoulSchedule(soul, era)
-    const hour = getGameHour(currentYear % 1)
-    const entry = getCurrentScheduleEntry(schedule, hour)
-    if (entry) {
-      soul.currentActivity = entry.activity
-      soul.currentLocation = entry.location
+    // AI behavior: decide action based on needs, traits, and world state
+    const behaviorWorld = buildBehaviorWorldState(this.store, this.souls, cityEngine.constructionSites)
+    const behavior = decideBehavior(soul, behaviorWorld, currentYear)
+    soul.currentActivity = behavior.activity
+    soul.currentLocation = behavior.location
+    soul.currentAnimation = behavior.animation
+
+    // Sync live 3D position back to engine soul data
+    const livePos = getSoulPosition(soul.id)
+    if (livePos) {
+      soul.position.x = livePos.x
+      soul.position.z = livePos.z
+    }
+
+    // Resource harvesting (location-aware for generic 'work')
+    let harvest = HARVEST_MAP[soul.currentActivity]
+    if (soul.currentActivity === 'work') {
+      if (soul.currentLocation === 'farm' || soul.role === 'Farmer') {
+        harvest = { type: 'wood', rate: 0.25 }
+      } else if (soul.currentLocation === 'factory') {
+        harvest = { type: 'ore', rate: 0.2 }
+      }
+    }
+    if (harvest) {
+      economySystem.harvestResource(harvest.type, harvest.rate * yearsElapsed)
     }
 
     // Natural stat changes over time
-    soul.energy = Math.max(10, Math.min(100, soul.energy + (entry?.activity === 'sleep' ? 5 : -0.5) * yearsElapsed))
+    soul.energy = Math.max(10, Math.min(100, soul.energy + (soul.currentActivity === 'sleep' ? 5 : -0.5) * yearsElapsed))
     soul.happiness = Math.max(0, Math.min(100, soul.happiness + (Math.random() - 0.5) * yearsElapsed))
     soul.stress = Math.max(0, Math.min(100, soul.stress + (Math.random() - 0.55) * yearsElapsed))
     soul.influence += yearsElapsed * 0.1 * (soul.traits?.ambition || 5) / 5
@@ -174,6 +227,20 @@ export class WorldEngine {
     if (currentYear - lastAmbition > 20 + Math.random() * 10) {
       this.lastAmbitionUpdate[soul.id] = currentYear
       this._updateAmbition(soul, worldContext)
+    }
+
+    // Update action intent log
+    const conversations = this.store.getState().activeConversations
+    const combats = this.store.getState().activeCombats
+    const intent = resolveActionIntent(soul, this.souls, conversations, combats)
+    intent.year = Math.round(currentYear)
+    intent.hour = getGameHour(currentYear % 1)
+
+    // Only log if the action text changed (avoid spamming identical entries)
+    const lastEntry = soul.actionLog[0]
+    if (!lastEntry || lastEntry.text !== intent.text) {
+      soul.actionLog.unshift(intent)
+      if (soul.actionLog.length > 12) soul.actionLog.length = 12
     }
 
     // Death check
@@ -259,13 +326,7 @@ export class WorldEngine {
         soul.latestThought = thought
       })
 
-    // Rebirth after some years
-    const rebirthDelay = 50 + Math.random() * 100
-    soul.birthYear = currentYear + rebirthDelay
-    soul.generation++
-    soul.health = 100
-
-    // Update all relationships
+    // Update all relationships — notify living souls
     for (const otherSoul of this.souls.filter((s) => s.id !== soul.id && s.isAlive)) {
       const rel = relationshipManager.get(soul.id, otherSoul.id)
       if (rel) {
@@ -279,6 +340,102 @@ export class WorldEngine {
         })
       }
     }
+  }
+
+  // ─── Breeding system ────────────────────────────────────────────────────────
+  _checkBreeding(currentYear, era) {
+    // Only check females who are alive and of childbearing age
+    const females = this.souls.filter(
+      (s) => s.isAlive && s.sex === 'female' && s.age >= 18 && s.age <= 45
+    )
+
+    for (const female of females) {
+      const partner = this._findPartner(female)
+      if (!partner || !partner.isAlive || partner.age < 18 || partner.sex !== 'male') continue
+
+      // Couple cooldown — 3-7 game years between children
+      const coupleKey = [female.id, partner.id].sort().join(':')
+      const lastBirth = this.coupleBirthCooldowns[coupleKey] || -9999
+      if (currentYear - lastBirth < 3 + Math.random() * 4) continue
+
+      // Max 6 children per couple
+      const childCount = this.souls.filter(
+        (s) => s.parentIds?.includes(female.id) && s.parentIds?.includes(partner.id)
+      ).length
+      if (childCount >= 6) continue
+
+      // 40% chance per check
+      if (Math.random() > 0.4) continue
+
+      this.coupleBirthCooldowns[coupleKey] = currentYear
+      this._birthChild(female, partner, currentYear, era)
+    }
+  }
+
+  _findPartner(soul) {
+    for (const other of this.souls) {
+      if (other.id === soul.id || !other.isAlive) continue
+      const rel = relationshipManager.get(soul.id, other.id)
+      if (rel && (rel.type === 'spouse' || rel.type === 'lover')) {
+        return other
+      }
+    }
+    return null
+  }
+
+  _birthChild(parentA, parentB, currentYear, era) {
+    const childData = createChildSoul(parentA, parentB, currentYear)
+    const child = this._makeLiveSoul(childData, { ...parentA.position })
+
+    // Child is born alive immediately
+    child.isAlive = true
+    child.age = 0
+    child.currentYear = currentYear
+    child.currentEra = era.name
+
+    this.souls.push(child)
+
+    this.store.getState().addEventLog({
+      year: Math.round(currentYear),
+      text: `${parentA.llmName} and ${parentB.llmName} have a child: ${child.llmName}!`,
+      type: 'birth',
+      soulId: child.id,
+    })
+
+    // Parent memories
+    parentA.memory?.addMemory({
+      year: currentYear,
+      type: 'child_born',
+      text: `My child ${child.llmName} is born.`,
+      emotionalWeight: 9,
+      personsInvolved: [child.id, parentB.id],
+    })
+    parentB.memory?.addMemory({
+      year: currentYear,
+      type: 'child_born',
+      text: `My child ${child.llmName} is born.`,
+      emotionalWeight: 9,
+      personsInvolved: [child.id, parentA.id],
+    })
+
+    // Child's birth memory
+    child.memory.addMemory({
+      year: currentYear,
+      type: 'birth',
+      text: `I am born to ${parentA.llmName} and ${parentB.llmName}.`,
+      emotionalWeight: 8,
+    })
+
+    // Initial parent-child relationships
+    const relA = relationshipManager.getOrCreate(child.id, parentA.id)
+    relA.affection = 70
+    relA.trust = 80
+    relA._updateType()
+
+    const relB = relationshipManager.getOrCreate(child.id, parentB.id)
+    relB.affection = 70
+    relB.trust = 80
+    relB._updateType()
   }
 
   async _triggerDeepThought(soul, worldContext) {
@@ -314,6 +471,15 @@ export class WorldEngine {
       }
     } catch (e) {
       // Non-critical
+    }
+
+    // If AI didn't produce a parseable ambition, synthesise a default from role
+    if (!soul.currentAmbition) {
+      soul.currentAmbition = {
+        goal: _defaultAmbitionFor(soul),
+        timeline: 15,
+        raw: 'default',
+      }
     }
   }
 
@@ -490,6 +656,65 @@ export class WorldEngine {
   getSouls() {
     return this.souls
   }
+
+  toJSON() {
+    return {
+      souls: this.souls.map((s) => ({
+        ...s,
+        memory: s.memory?.toJSON() || null,
+      })),
+      firedEvents: [...this.firedEvents],
+      emergentCooldowns: { ...this.emergentCooldowns },
+      lastTickYear: this.lastTickYear,
+      lastInteractionCheck: this.lastInteractionCheck,
+      lastBreedingCheck: this.lastBreedingCheck,
+      coupleBirthCooldowns: { ...this.coupleBirthCooldowns },
+      lastDeepThink: { ...this.lastDeepThink },
+      lastAmbitionUpdate: { ...this.lastAmbitionUpdate },
+      warEndYear: this.warEndYear || null,
+    }
+  }
+
+  rehydrate(data) {
+    this.firedEvents = new Set(data.firedEvents || [])
+    this.emergentCooldowns = data.emergentCooldowns || {}
+    this.lastTickYear = data.lastTickYear || -3000
+    this.lastInteractionCheck = data.lastInteractionCheck || -3000
+    this.lastBreedingCheck = data.lastBreedingCheck || -3000
+    this.coupleBirthCooldowns = data.coupleBirthCooldowns || {}
+    this.lastDeepThink = data.lastDeepThink || {}
+    this.lastAmbitionUpdate = data.lastAmbitionUpdate || {}
+    this.warEndYear = data.warEndYear || null
+
+    // Restore souls with live SoulMemory instances
+    this.souls = (data.souls || []).map((sd) => {
+      const mem = new SoulMemory(sd.id)
+      if (sd.memory) {
+        mem.episodic = sd.memory.episodic || []
+        mem.beliefs = sd.memory.beliefs || []
+        mem.traumas = sd.memory.traumas || []
+        mem.joys = sd.memory.joys || []
+        mem.consolidatedWisdom = sd.memory.consolidatedWisdom || []
+        if (sd.memory.relational) mem.relational = sd.memory.relational
+      }
+      return { ...sd, memory: mem }
+    })
+
+    this.initialized = true
+    this.store.getState().setSouls([...this.souls])
+  }
+}
+
+function _defaultAmbitionFor(soul) {
+  const map = {
+    Farmer: 'grow more food and build a farm',
+    Healer: 'build a temple to heal the sick',
+    Priest: 'build a temple for worship',
+    Warrior: 'build a castle for defense',
+    Trader: 'build a market for trade',
+    Builder: 'build a great factory',
+  }
+  return map[soul.role] || 'build something meaningful for the community'
 }
 
 let _worldEngine = null

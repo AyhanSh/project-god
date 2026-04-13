@@ -163,6 +163,40 @@ export class RelationshipManager {
       .filter((r) => r.souls.includes(soulId))
   }
 
+  toJSON() {
+    const data = {}
+    for (const [key, rel] of Object.entries(this.relationships)) {
+      data[key] = {
+        souls: rel.souls,
+        type: rel.type,
+        trust: rel.trust,
+        affection: rel.affection,
+        respect: rel.respect,
+        resentment: rel.resentment,
+        fear: rel.fear,
+        firstMet: rel.firstMet,
+        interactions: rel.interactions.slice(-20),
+        sharedExperiences: rel.sharedExperiences.slice(-10),
+        conflicts: rel.conflicts.slice(-10),
+        bonds: rel.bonds.slice(-10),
+        isAlive: rel.isAlive,
+        lastInteraction: rel.lastInteraction,
+        conversationHistory: rel.conversationHistory.slice(-5),
+        married: rel.married,
+      }
+    }
+    return data
+  }
+
+  fromJSON(data) {
+    this.relationships = {}
+    for (const [key, d] of Object.entries(data)) {
+      const rel = new SoulRelationship(d.souls[0], d.souls[1])
+      Object.assign(rel, d)
+      this.relationships[key] = rel
+    }
+  }
+
   getFormattedRelationships(soulId, allSouls) {
     return this.getAllForSoul(soulId).map((rel) => {
       const otherId = rel.souls.find((id) => id !== soulId)

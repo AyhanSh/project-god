@@ -15,6 +15,12 @@ export default function LoadingScreen({ onComplete }) {
   const [phase, setPhase] = useState(0)
   const [progress, setProgress] = useState(0)
   const [ready, setReady] = useState(false)
+  const [exiting, setExiting] = useState(false)
+
+  const handleBegin = () => {
+    setExiting(true)
+    setTimeout(() => onComplete(), 800)
+  }
 
   useEffect(() => {
     let timeout
@@ -23,12 +29,13 @@ export default function LoadingScreen({ onComplete }) {
 
     const advancePhase = (idx) => {
       if (idx >= LOADING_PHASES.length) {
+        setProgress(100)
         setReady(true)
         return
       }
       setPhase(idx)
       elapsed += idx > 0 ? LOADING_PHASES[idx - 1].duration : 0
-      setProgress(Math.min(100, Math.round((elapsed / totalDuration) * 100)))
+      setProgress(Math.min(99, Math.round((elapsed / totalDuration) * 100)))
       timeout = setTimeout(() => advancePhase(idx + 1), LOADING_PHASES[idx].duration)
     }
 
@@ -37,12 +44,15 @@ export default function LoadingScreen({ onComplete }) {
   }, [])
 
   return (
-    <div style={{
-      position: 'fixed', inset: 0, zIndex: 9999,
-      background: 'linear-gradient(180deg, #0a0a1a 0%, #1a0a2e 50%, #0a0a1a 100%)',
-      display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
-      fontFamily: "'Georgia', serif", color: '#e0d0c0',
-    }}>
+    <motion.div
+      animate={{ opacity: exiting ? 0 : 1 }}
+      transition={{ duration: 0.7, ease: 'easeInOut' }}
+      style={{
+        position: 'fixed', inset: 0, zIndex: 9999,
+        background: 'linear-gradient(180deg, #0a0a1a 0%, #1a0a2e 50%, #0a0a1a 100%)',
+        display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+        fontFamily: "'Georgia', serif", color: '#e0d0c0',
+      }}>
       <motion.h1
         initial={{ opacity: 0, y: -30 }}
         animate={{ opacity: 1, y: 0 }}
@@ -96,7 +106,7 @@ export default function LoadingScreen({ onComplete }) {
             initial={{ opacity: 0, scale: 0.8 }}
             animate={{ opacity: 1, scale: 1 }}
             transition={{ delay: 0.3, duration: 0.5 }}
-            onClick={onComplete}
+            onClick={handleBegin}
             style={{
               marginTop: '3rem', padding: '14px 48px',
               background: 'transparent', border: '1px solid #6B5CE7',
@@ -115,6 +125,6 @@ export default function LoadingScreen({ onComplete }) {
           </motion.button>
         )}
       </AnimatePresence>
-    </div>
+    </motion.div>
   )
 }
