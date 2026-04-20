@@ -13,20 +13,37 @@ class AudioEngine {
     this.masterVolume = 0.5
     this.muted = false
     this.initialized = false
+    this.audioAvailable = false // true only if audio directory exists
   }
 
   _init() {
     if (this.initialized) return
     this.initialized = true
 
-    // Load SFX — fail gracefully if files are missing
+    // Probe for audio directory with a quiet HEAD request.
+    // A Howl XHR probe produces noisy 404 console errors when files are missing;
+    // fetch() fails silently in the network tab without polluting the console.
+    fetch('/audio/sfx/birth.mp3', { method: 'HEAD' })
+      .then((res) => {
+        if (res.ok) {
+          this.audioAvailable = true
+          this._loadAll()
+        }
+      })
+      .catch(() => {
+        // No audio files present — run in silent mode
+      })
+  }
+
+  _loadAll() {
+    // Load all SFX
     for (const type of SFX_TYPES) {
       try {
         this.sfx[type] = new Howl({
           src: [`/audio/sfx/${type}.mp3`],
           volume: this.masterVolume,
           preload: true,
-          onloaderror: () => {}, // silent fail
+          onloaderror: () => {},
         })
       } catch {
         // Missing audio asset — game continues without sound

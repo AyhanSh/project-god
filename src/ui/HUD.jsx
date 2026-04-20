@@ -22,7 +22,13 @@ function formatYear(year) {
   return `${year} AD`
 }
 
-const SPEEDS = [1, 2, 5, 10]
+const SPEEDS = [
+  { value: 0.5, label: '0.5x' },
+  { value: 1, label: '1x' },
+  { value: 2, label: '2x' },
+  { value: 5, label: '5x' },
+  { value: 10, label: '10x' },
+]
 
 export default function HUD() {
   const [saveFeedback, setSaveFeedback] = useState(null)
@@ -277,6 +283,28 @@ export default function HUD() {
           </motion.button>
 
           <motion.button
+            whileHover={{ scale: 1.05, boxShadow: '0 0 12px rgba(107,92,231,0.4)' }}
+            whileTap={{ scale: 0.95 }}
+            onClick={() => useGameStore.getState().toggleDiplomacyPanel()}
+            title="Diplomacy"
+            style={{
+              background: 'rgba(107, 92, 231, 0.1)',
+              border: '1px solid rgba(107, 92, 231, 0.25)',
+              color: 'var(--text-secondary)',
+              padding: '4px 14px',
+              borderRadius: '4px',
+              cursor: 'pointer',
+              fontFamily: 'Georgia, serif',
+              fontSize: '11px',
+              letterSpacing: '1px',
+              textTransform: 'uppercase',
+              transition: 'background 0.2s',
+            }}
+          >
+            Diplo
+          </motion.button>
+
+          <motion.button
             whileHover={{ scale: 1.05, boxShadow: '0 0 12px rgba(76,175,80,0.4)' }}
             whileTap={{ scale: 0.95 }}
             onClick={handleSave}
@@ -428,16 +456,16 @@ export default function HUD() {
           {/* Speed Buttons */}
           {SPEEDS.map((s) => (
             <motion.button
-              key={s}
+              key={s.value}
               whileHover={{ scale: 1.1 }}
               whileTap={{ scale: 0.9 }}
-              onClick={() => setSpeed(s)}
+              onClick={() => setSpeed(s.value)}
               style={{
-                background: speedMultiplier === s && !paused
+                background: speedMultiplier === s.value && !paused
                   ? 'var(--accent)'
                   : 'rgba(107, 92, 231, 0.1)',
-                border: `1px solid ${speedMultiplier === s && !paused ? 'var(--accent)' : 'rgba(107, 92, 231, 0.25)'}`,
-                color: speedMultiplier === s && !paused ? '#fff' : 'var(--text-secondary)',
+                border: `1px solid ${speedMultiplier === s.value && !paused ? 'var(--accent)' : 'rgba(107, 92, 231, 0.25)'}`,
+                color: speedMultiplier === s.value && !paused ? '#fff' : 'var(--text-secondary)',
                 width: '32px',
                 height: '26px',
                 borderRadius: '3px',
@@ -451,7 +479,7 @@ export default function HUD() {
                 justifyContent: 'center',
               }}
             >
-              {s}x
+              {s.label}
             </motion.button>
           ))}
         </div>

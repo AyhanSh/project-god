@@ -8,15 +8,21 @@ import SandboxPanel from '@/ui/SandboxPanel'
 import DevPanel from '@/ui/DevPanel'
 import EventLog from '@/ui/EventLog'
 import SoulInspector from '@/ui/SoulInspector'
+import { CanvasErrorBoundary, UIErrorBoundary } from '@/ui/ErrorBoundary'
+import { resetAllEngines } from '@/engine/resetEngines'
 
 export default function SandboxWorld() {
   useEffect(() => {
+    resetAllEngines()
     // Add initial event log entry
     useGameStore.getState().addEventLog({
       year: 0,
       text: 'Sandbox mode initialized. Use the panel to test features.',
       type: 'system',
     })
+    return () => {
+      resetAllEngines()
+    }
   }, [])
 
   const handleBackToMenu = () => {
@@ -41,26 +47,30 @@ export default function SandboxWorld() {
 
   return (
     <div id="game-root">
-      <Canvas
-        camera={{ position: [0, 50, 70], fov: 55, near: 0.1, far: 2000 }}
-        shadows
-        gl={{ antialias: true, alpha: false }}
-        style={{ position: 'absolute', inset: 0 }}
-      >
-        <SandboxScene />
-      </Canvas>
+      <CanvasErrorBoundary>
+        <Canvas
+          camera={{ position: [0, 50, 70], fov: 55, near: 0.1, far: 2000 }}
+          shadows
+          gl={{ antialias: true, alpha: false }}
+          style={{ position: 'absolute', inset: 0 }}
+        >
+          <SandboxScene />
+        </Canvas>
+      </CanvasErrorBoundary>
 
-      {/* Sandbox Panel (right side) */}
-      <SandboxPanel />
+      <UIErrorBoundary>
+        {/* Sandbox Panel (right side) */}
+        <SandboxPanel />
 
-      {/* Dev Panel (bottom left, toggled) */}
-      <DevPanel />
+        {/* Dev Panel (bottom left, toggled) */}
+        <DevPanel />
 
-      {/* Event Log (bottom left) */}
-      <EventLog />
+        {/* Event Log (bottom left) */}
+        <EventLog />
 
-      {/* Soul Inspector (shown when a soul is selected) */}
-      <SoulInspector />
+        {/* Soul Inspector (shown when a soul is selected) */}
+        <SoulInspector />
+      </UIErrorBoundary>
 
       {/* Bottom bar with sandbox label + controls */}
       <div style={{

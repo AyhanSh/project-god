@@ -4,13 +4,18 @@ import { motion, AnimatePresence } from 'framer-motion'
 import { useGameStore } from '@/store/useGameStore'
 
 const WEATHERS = ['clear', 'rain', 'storm', 'snow', 'heatwave']
+const IS_DEV = process.env.NODE_ENV !== 'production'
 
 export default function DevPanel() {
+  if (!IS_DEV) return null
   const show = useGameStore((s) => s.showDevPanel)
   const devWeather = useGameStore((s) => s.devWeather)
   const devFogDensity = useGameStore((s) => s.devFogDensity)
   const devTimeOfDay = useGameStore((s) => s.devTimeOfDay)
   const weather = useGameStore((s) => s.weather)
+  const flySpeed = useGameStore((s) => s.flySpeed)
+  const flySmoothness = useGameStore((s) => s.flySmoothness)
+  const flyMode = useGameStore((s) => s.flyMode)
 
   const setDevWeather = (v) => {
     useGameStore.setState({ devWeather: v })
@@ -20,7 +25,7 @@ export default function DevPanel() {
   const setDevTimeOfDay = (v) => useGameStore.setState({ devTimeOfDay: v })
 
   const resetAll = () => {
-    useGameStore.setState({ devWeather: null, devFogDensity: null, devTimeOfDay: null })
+    useGameStore.setState({ devWeather: null, devFogDensity: null, devTimeOfDay: null, flySpeed: 40, flySmoothness: 0 })
   }
 
   const panelStyle = {
@@ -176,6 +181,52 @@ export default function DevPanel() {
                 </button>
               )}
               <span>Dense</span>
+            </div>
+          </div>
+
+          {/* Fly Speed */}
+          <div style={sectionStyle}>
+            <div style={{ ...labelStyle, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <span>Fly Speed {!flyMode && <span style={{ fontSize: '8px', opacity: 0.5 }}>(fly off)</span>}</span>
+              <span style={{ fontSize: '10px', color: '#4fc3f7' }}>
+                {flySpeed}
+              </span>
+            </div>
+            <input
+              type="range"
+              min="5"
+              max="200"
+              step="5"
+              value={flySpeed}
+              onChange={(e) => useGameStore.getState().setFlySpeed(parseFloat(e.target.value))}
+              style={sliderStyle}
+            />
+            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '8px', color: 'var(--text-secondary)', marginTop: '2px' }}>
+              <span>Slow</span>
+              <span>Fast</span>
+            </div>
+          </div>
+
+          {/* Fly Smoothness */}
+          <div style={sectionStyle}>
+            <div style={{ ...labelStyle, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <span>Fly Smoothness</span>
+              <span style={{ fontSize: '10px', color: '#4fc3f7' }}>
+                {flySmoothness === 0 ? 'Off' : (flySmoothness * 100).toFixed(0) + '%'}
+              </span>
+            </div>
+            <input
+              type="range"
+              min="0"
+              max="1"
+              step="0.05"
+              value={flySmoothness}
+              onChange={(e) => useGameStore.getState().setFlySmoothness(parseFloat(e.target.value))}
+              style={sliderStyle}
+            />
+            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '8px', color: 'var(--text-secondary)', marginTop: '2px' }}>
+              <span>Instant</span>
+              <span>Smooth</span>
             </div>
           </div>
 

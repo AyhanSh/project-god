@@ -5,7 +5,10 @@
   "scripts": {
     "dev": "next dev",
     "build": "next build",
-    "start": "next start"
+    "start": "next start",
+    "lint": "eslint src/ --fix",
+    "format": "prettier --write src/",
+    "test": "vitest run"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.82.0",
@@ -24,6 +27,14 @@
     "zustand": "^5.0.12"
   },
   "devDependencies": {
-    "babel-plugin-react-compiler": "1.0.0"
+    "@testing-library/jest-dom": "^6.9.1",
+    "@testing-library/react": "^16.3.2",
+    "babel-plugin-react-compiler": "1.0.0",
+    "eslint": "^9.39.4",
+    "eslint-config-next": "^16.2.3",
+    "eslint-config-prettier": "^10.1.8",
+    "jsdom": "^29.0.2",
+    "prettier": "^3.8.2",
+    "vitest": "^4.1.4"
   }
 }

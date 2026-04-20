@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useRef } from 'react'
+import { useState } from 'react'
 import { motion } from 'framer-motion'
 import { useGameStore } from '@/store/useGameStore'
 import { ERAS } from '@/data/eras'
@@ -438,10 +438,6 @@ function MechanicsSection() {
     useGameStore.setState({ sandboxTrees: [], sandboxRocks: [] })
   }
 
-  // Construction progress simulation
-  const [constructionId, setConstructionId] = useState(null)
-  const progressRef = useRef(null)
-
   const startConstruction = () => {
     const building = {
       id: `bld_${nanoid(6)}`,
@@ -452,35 +448,40 @@ function MechanicsSection() {
       health: 100,
     }
     useGameStore.setState((s) => ({ buildings: [...s.buildings, building] }))
-    setConstructionId(building.id)
+
+    // Assign a soul to build it
+    const soul = _findFreeSoul(building.position)
+    if (soul) {
+      useGameStore.setState((s) => ({
+        sandboxHarvestTasks: [...s.sandboxHarvestTasks, {
+          soulId: soul.id, targetId: building.id, targetType: 'building',
+        }],
+      }))
+      useGameStore.getState().addEventLog({
+        year: Math.round(useGameStore.getState().currentYear),
+        text: `[SANDBOX] ${soul.llmName} sent to build stone cottage`,
+        type: 'build',
+      })
+    }
   }
 
-  useEffect(() => {
-    if (!constructionId) return
-    const interval = setInterval(() => {
-      const state = useGameStore.getState()
-      const bld = state.buildings.find((b) => b.id === constructionId)
-      if (!bld || bld.progress >= 1) {
-        setConstructionId(null)
-        clearInterval(interval)
-        if (bld) {
-          state.addEventLog({
-            year: Math.round(state.currentYear),
-            text: `[SANDBOX] Construction complete: ${bld.type.replace(/_/g, ' ')}`,
-            type: 'build',
-          })
-        }
-        return
-      }
-      useGameStore.setState((s) => ({
-        buildings: s.buildings.map((b) =>
-          b.id === constructionId ? { ...b, progress: Math.min(1, b.progress + 0.05) } : b
-        ),
-      }))
-    }, 300)
-    progressRef.current = interval
-    return () => clearInterval(interval)
-  }, [constructionId])
+  const sendToBuild = (buildingId) => {
+    const bld = buildings.find((b) => b.id === buildingId)
+    if (!bld || (bld.progress || 0) >= 1) return
+    if (harvestTasks.find((t) => t.targetId === buildingId)) return
+    const soul = _findFreeSoul(bld.position)
+    if (!soul) return
+    useGameStore.setState((s) => ({
+      sandboxHarvestTasks: [...s.sandboxHarvestTasks, {
+        soulId: soul.id, targetId: buildingId, targetType: 'building',
+      }],
+    }))
+    useGameStore.getState().addEventLog({
+      year: Math.round(useGameStore.getState().currentYear),
+      text: `[SANDBOX] ${soul.llmName} sent to build ${bld.type.replace(/_/g, ' ')}`,
+      type: 'build',
+    })
+  }
 
   return (
     <div style={sectionGap}>
@@ -588,35 +589,51 @@ function MechanicsSection() {
         <span style={labelStyle}>Building Construction</span>
         <button
           onClick={startConstruction}
-          disabled={!!constructionId}
+          disabled={aliveSouls.length === 0}
           style={{
             ...btnStyle(false),
-            opacity: constructionId ? 0.4 : 1,
-            cursor: constructionId ? 'not-allowed' : 'pointer',
+            opacity: aliveSouls.length > 0 ? 1 : 0.3,
           }}
         >
-          {constructionId ? 'Building...' : 'Start Construction (Stone Cottage)'}
+          + Start Construction (Stone Cottage)
         </button>
-        {constructionId && (() => {
-          const bld = buildings.find((b) => b.id === constructionId)
-          if (!bld) return null
-          const pct = Math.round((bld.progress || 0) * 100)
-          return (
-            <div style={{ marginTop: '6px' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '9px', color: 'var(--text-secondary)' }}>
-                <span>Progress</span>
-                <span>{pct}%</span>
+        {/* In-progress buildings */}
+        <div style={{ maxHeight: '120px', overflowY: 'auto', marginTop: '6px' }}>
+          {buildings.filter((b) => (b.progress || 0) < 1).map((bld) => {
+            const pct = Math.round((bld.progress || 0) * 100)
+            const hasWorker = !!harvestTasks.find((t) => t.targetId === bld.id)
+            return (
+              <div key={bld.id} style={{
+                padding: '4px 6px', borderBottom: '1px solid rgba(255,255,255,0.05)',
+                fontSize: '9px',
+              }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '3px' }}>
+                  <span style={{ color: 'var(--text-secondary)' }}>
+                    {bld.type.replace(/_/g, ' ')} ({pct}%)
+                  </span>
+                  <button
+                    onClick={() => sendToBuild(bld.id)}
+                    disabled={hasWorker || aliveSouls.length === 0}
+                    style={{
+                      ...btnStyle(hasWorker),
+                      fontSize: '8px', padding: '2px 6px',
+                      opacity: !hasWorker && aliveSouls.length > 0 ? 1 : 0.3,
+                    }}
+                  >
+                    {hasWorker ? 'Building...' : 'Send Soul'}
+                  </button>
+                </div>
+                <div style={{ width: '100%', height: '4px', background: '#333', borderRadius: '2px' }}>
+                  <div style={{
+                    width: `${pct}%`, height: '100%', borderRadius: '2px',
+                    background: 'linear-gradient(90deg, #4fc3f7, #6B5CE7)',
+                    transition: 'width 0.2s',
+                  }} />
+                </div>
               </div>
-              <div style={{ width: '100%', height: '6px', background: '#333', borderRadius: '3px', marginTop: '3px' }}>
-                <div style={{
-                  width: `${pct}%`, height: '100%', borderRadius: '3px',
-                  background: 'linear-gradient(90deg, #4fc3f7, #6B5CE7)',
-                  transition: 'width 0.2s',
-                }} />
-              </div>
-            </div>
-          )
-        })()}
+            )
+          })}
+        </div>
       </div>
 
       {/* Cleanup */}

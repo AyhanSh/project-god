@@ -6,16 +6,18 @@ import HumanModel from '@/models/humans/HumanModel'
 import { useGameStore } from '@/store/useGameStore'
 import { getGameHour, LOCATION_POSITIONS } from '@/engine/DailyRoutine'
 import { findNearestNode, markNodeActive, markNodeInactive } from '@/engine/ResourceNodeRegistry'
+import { BUILDING_SIZES } from '@/models/buildings/BuildingFactory'
 import { getEraForYear } from '@/data/eras'
 import { sampleHeight, sampleNormal, WATER_LEVEL, FLAT_RADIUS, TERRAIN_SIZE } from '@/world/Terrain'
-import { generateHeightmap } from '@/world/Terrain'
+import { worldHeightmap } from '@/engine/HeightmapRegistry'
 import { relationshipManager } from '@/engine/SoulRelations'
 import { setSoulPosition, getSoulPosition } from '@/engine/SoulPositionRegistry'
+import { getCampfireForSoul, getNearestLitCampfire } from '@/engine/CampfireRegistry'
 import { GOD_POWERS } from '@/data/godPowers'
 import SoulDialogueBubble from './SoulDialogueBubble'
 import HeartParticles from './HeartParticles'
 
-const heightmap = generateHeightmap(1337)
+const heightmap = worldHeightmap
 const HALF_TERRAIN = TERRAIN_SIZE / 2 - 4  // stay inside terrain bounds
 
 /**
@@ -66,6 +68,7 @@ const WORK_ACTIVITIES = new Set([
   'pray', 'meditate', 'morning_prayer', 'dawn_prayer', 'evening_prayer',
   'matins', 'vespers', 'counsel', 'court', 'plan', 'count_goods',
   'council', 'digital_existence', 'ritual',
+  'build_campfire', 'warm_campfire',
 ])
 
 export default function SoulEntity({ soul, worldYear }) {
@@ -141,7 +144,7 @@ export default function SoulEntity({ soul, worldYear }) {
   useEffect(() => {
     return () => {
       const rt = resourceTargetRef.current
-      if (rt) markNodeInactive(rt.nodeType, rt.nodeIndex)
+      if (rt && rt.nodeIndex >= 0) markNodeInactive(rt.nodeType, rt.nodeIndex)
     }
   }, [])
 
@@ -193,13 +196,26 @@ export default function SoulEntity({ soul, worldYear }) {
         // Always face the other soul
         g.rotation.y = Math.atan2(cdx, cdz)
 
-        // If too far apart, walk toward each other
+        // If too far apart, walk toward each other (but stay on land)
         if (cdist > 2.5) {
           const speed = 12 * delta
           const step = Math.min(speed, cdist - 2.0)
           if (step > 0.05) {
             const newX = currentPos.x + (cdx / cdist) * step
             const newZ = currentPos.z + (cdz / cdist) * step
+            // Don't walk into water — stop at shore
+            if (!isSandbox) {
+              const nextY = sampleHeight(heightmap, newX, newZ)
+              if (nextY < WATER_LEVEL + 0.3) {
+                // Already at water edge — just talk here
+                if (!isTalkingRef.current) {
+                  isTalkingRef.current = true
+                  setIsTalking(true)
+                }
+                if (currentAnim !== 'talk') setCurrentAnim('talk')
+                return
+              }
+            }
             setCurrentPos({ x: newX, z: newZ })
             g.position.x = newX
             g.position.z = newZ
@@ -243,10 +259,16 @@ export default function SoulEntity({ soul, worldYear }) {
       let newX = currentPos.x + (dx / dist) * step
       let newZ = currentPos.z + (dz / dist) * step
 
-      // Steep slope avoidance
+      // Steep slope or water avoidance
       if (!isSandbox) {
         const nextNormal = sampleNormal(heightmap, newX, newZ)
         if (nextNormal.slope > 0.7) {
+          if (currentAnim !== 'idle') setCurrentAnim('idle')
+          return
+        }
+        const nextGroundY = sampleHeight(heightmap, newX, newZ)
+        if (nextGroundY < WATER_LEVEL + 0.3) {
+          // Don't walk into water — stop at shore
           if (currentAnim !== 'idle') setCurrentAnim('idle')
           return
         }
@@ -257,17 +279,7 @@ export default function SoulEntity({ soul, worldYear }) {
       g.position.z = newZ
       g.rotation.y = Math.atan2(dx, dz)
 
-      // Pick animation based on terrain
-      if (!isSandbox) {
-        const nextGroundY = sampleHeight(heightmap, newX, newZ)
-        if (nextGroundY < WATER_LEVEL + 0.3) {
-          if (currentAnim !== 'swim') setCurrentAnim('swim')
-        } else {
-          if (currentAnim !== 'walk') setCurrentAnim('walk')
-        }
-      } else {
-        if (currentAnim !== 'walk') setCurrentAnim('walk')
-      }
+      if (currentAnim !== 'walk') setCurrentAnim('walk')
     } else {
       // Reached destination — use schedule animation (or swim if standing in water)
       const desiredAnim = inWater ? 'swim' : (scheduleAnimRef.current || 'idle')
@@ -311,22 +323,41 @@ export default function SoulEntity({ soul, worldYear }) {
     if (prevBehaviorKeyRef.current === behaviorKey) return
     prevBehaviorKeyRef.current = behaviorKey
 
-    // Clean up previous resource target
+    // Clean up previous resource target (skip non-resource entries like campfire/building)
     const prevRT = resourceTargetRef.current
     if (prevRT) {
-      markNodeInactive(prevRT.nodeType, prevRT.nodeIndex)
+      if (prevRT.nodeIndex >= 0) markNodeInactive(prevRT.nodeType, prevRT.nodeIndex)
       resourceTargetRef.current = null
     }
 
     // Resolve target position from location
     let loc = LOCATION_POSITIONS[location] || LOCATION_POSITIONS.home
 
-    // Construction: go to the actual building site
-    const mySite = activity === 'build_structure'
-      ? constructionSites.find((s) => s.builder === soul.id) || constructionSites[0]
-      : null
+    // Construction: go to the nearest building site (prefer own site, then nearest)
+    let mySite = null
+    if (activity === 'build_structure' && constructionSites.length > 0) {
+      mySite = constructionSites.find((s) => s.builder === soul.id)
+      if (!mySite) {
+        // Find nearest site to the soul's current position
+        let bestDist = Infinity
+        for (const site of constructionSites) {
+          const dx = site.position.x - currentPos.x
+          const dz = site.position.z - currentPos.z
+          const d = dx * dx + dz * dz
+          if (d < bestDist) { bestDist = d; mySite = site }
+        }
+      }
+    }
     if (mySite) {
-      loc = { x: mySite.position.x, z: mySite.position.z, range: 1.5 }
+      // Stand outside the building footprint (buildings render at scale 2)
+      const sx = mySite.position.x, sz = mySite.position.z
+      const bldSize = BUILDING_SIZES[mySite.type] || { width: 3, depth: 3 }
+      const standOff = Math.max(bldSize.width, bldSize.depth) * 2 + 2
+      const toCenter = Math.atan2(-sz, -sx) // angle toward origin
+      const standX = sx + Math.cos(toCenter) * standOff
+      const standZ = sz + Math.sin(toCenter) * standOff
+      loc = { x: standX, z: standZ, range: 0.5 }
+      resourceTargetRef.current = { nodeType: 'building', nodeIndex: -1, nodeX: sx, nodeZ: sz }
     }
 
     const soulHash = soul.id.charCodeAt(soul.id.length - 1) || 0
@@ -354,6 +385,23 @@ export default function SoulEntity({ soul, worldYear }) {
         raw = { x: node.x + Math.cos(angle) * 1.5, z: node.z + Math.sin(angle) * 1.5 }
         resourceTargetRef.current = { nodeType: 'rock', nodeIndex: node.index, nodeX: node.x, nodeZ: node.z }
         markNodeActive('rock', node.index)
+      }
+    } else if (activity === 'build_campfire') {
+      // Stand in front of the campfire being built and face it
+      const cf = getCampfireForSoul(soul.id)
+      if (cf) {
+        const cx = cf.position.x, cz = cf.position.z
+        const toCenter = Math.atan2(-cz, -cx)
+        raw = { x: cx + Math.cos(toCenter) * 1.8, z: cz + Math.sin(toCenter) * 1.8 }
+        resourceTargetRef.current = { nodeType: 'campfire', nodeIndex: -1, nodeX: cx, nodeZ: cz }
+      }
+    } else if (activity === 'warm_campfire') {
+      // Go sit near the nearest lit campfire
+      const cf = getNearestLitCampfire(raw.x, raw.z)
+      if (cf) {
+        const angle = ((soulHash * 37) % 8) / 8 * Math.PI * 2
+        raw = { x: cf.position.x + Math.cos(angle) * 2.5, z: cf.position.z + Math.sin(angle) * 2.5 }
+        resourceTargetRef.current = { nodeType: 'campfire', nodeIndex: -1, nodeX: cf.position.x, nodeZ: cf.position.z }
       }
     }
 
@@ -411,20 +459,20 @@ export default function SoulEntity({ soul, worldYear }) {
       // Non-work activities: explore and wander (tighter radius)
       const roll = Math.random()
 
-      if (roll < 0.2) {
-        // 20% chance: medium exploration — wander within 40 units of center
+      if (roll < 0.15) {
+        // 15% chance: short exploration — stay within visible range
         const angle = Math.random() * Math.PI * 2
-        const dist = isSandbox ? 10 + Math.random() * 30 : 20 + Math.random() * 40
+        const dist = isSandbox ? 5 + Math.random() * 15 : 8 + Math.random() * 18
         const raw = {
           x: Math.cos(angle) * dist,
           z: Math.sin(angle) * dist,
         }
         const safe = isSandbox ? raw : findSafePosition(raw.x, raw.z)
         setTargetPos(safe)
-      } else if (roll < 0.6) {
-        // 40% chance: wander near schedule location (8-20 units)
+      } else if (roll < 0.45) {
+        // 30% chance: wander near schedule location (3-8 units)
         const base = scheduleTargetRef.current
-        const wanderRadius = isSandbox ? 5 + Math.random() * 15 : 8 + Math.random() * 12
+        const wanderRadius = isSandbox ? 3 + Math.random() * 8 : 3 + Math.random() * 5
         const angle = Math.random() * Math.PI * 2
         const raw = {
           x: base.x + Math.cos(angle) * wanderRadius,
@@ -433,7 +481,7 @@ export default function SoulEntity({ soul, worldYear }) {
         const safe = isSandbox ? raw : findSafePosition(raw.x, raw.z)
         setTargetPos(safe)
       }
-      // 40% chance: stay put (do nothing)
+      // 55% chance: stay put (do nothing)
     }, 5000 + Math.random() * 5000)
 
     return () => clearInterval(interval)

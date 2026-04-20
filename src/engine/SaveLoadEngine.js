@@ -20,6 +20,7 @@ export class SaveLoadEngine {
       // Store state (excluding UI transients and terrain)
       store: {
         currentYear: state.currentYear,
+        timeOfDay: state.timeOfDay,
         currentEra: state.currentEra,
         speedMultiplier: state.speedMultiplier,
         weather: state.weather,
@@ -73,6 +74,7 @@ export class SaveLoadEngine {
     const s = payload.store
     store.setState({
       currentYear: s.currentYear,
+      timeOfDay: s.timeOfDay || 0,
       currentEra: s.currentEra,
       speedMultiplier: s.speedMultiplier,
       weather: s.weather,

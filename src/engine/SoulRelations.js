@@ -142,6 +142,10 @@ export class RelationshipManager {
     this.relationships = {}
   }
 
+  reset() {
+    this.relationships = {}
+  }
+
   _key(idA, idB) {
     return [idA, idB].sort().join('::')
   }

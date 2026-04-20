@@ -10,6 +10,15 @@ export class WeatherSystem {
     this.stormChance = 0.1
   }
 
+  reset() {
+    this.currentWeather = 'clear'
+    this.season = 'spring'
+    this.temperature = 20
+    this.drought = false
+    this.stormActive = false
+    this.stormChance = 0.1
+  }
+
   update(year, store) {
     // Season cycles: every 25 game years represents one season cycle
     const cyclePos = ((year % 100) + 100) % 100 / 100

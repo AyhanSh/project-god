@@ -7,6 +7,10 @@ import { ERAS } from '@/data/eras'
 
 const DEFAULT_ERA = ERAS[0]
 
+// Night color tint for the sky dome
+const NIGHT_COLOR = new THREE.Color('#060610')
+const _tempColor = new THREE.Color()
+
 /**
  * Custom gradient sky dome.
  *
@@ -42,8 +46,15 @@ export default function Sky() {
 
   const currentEra     = useGameStore((s) => s.currentEra)
   const currentEraData = useGameStore((s) => s.currentEraData)
+  const timeOfDay      = useGameStore((s) => s.timeOfDay)
+  const devTimeOfDay   = useGameStore((s) => s.devTimeOfDay)
 
   const era = currentEraData ?? ERAS.find((e) => e.id === currentEra) ?? DEFAULT_ERA
+
+  // Day/night factor: 1 = full day, 0 = full night
+  const gameHour = devTimeOfDay !== null ? devTimeOfDay : timeOfDay
+  const dayRad = ((gameHour - 12) / 24) * Math.PI * 2
+  const dayFactor = 0.15 + 0.85 * Math.max(0, Math.cos(dayRad))
 
   const uniforms = useMemo(() => ({
     uTopColor:     { value: new THREE.Color(era.skyColor) },
@@ -51,10 +62,12 @@ export default function Sky() {
     uExponent:     { value: 0.5 },
   }), []) // initialised once; updated below via ref
 
-  // Reactively update colours on era change without recreating the mesh
+  // Reactively update colours on era change + day/night cycle
   if (materialRef.current) {
-    materialRef.current.uniforms.uTopColor.value.set(era.skyColor)
-    materialRef.current.uniforms.uHorizonColor.value.set(era.fogColor)
+    _tempColor.set(era.skyColor).lerp(NIGHT_COLOR, 1 - dayFactor)
+    materialRef.current.uniforms.uTopColor.value.copy(_tempColor)
+    _tempColor.set(era.fogColor).lerp(NIGHT_COLOR, 1 - dayFactor)
+    materialRef.current.uniforms.uHorizonColor.value.copy(_tempColor)
   }
 
   return (

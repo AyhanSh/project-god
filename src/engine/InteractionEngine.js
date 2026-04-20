@@ -4,6 +4,8 @@ import { soulMind, THOUGHT_TYPES } from './SoulMind'
 import { relationshipManager } from './SoulRelations'
 import { getSoulPosition } from './SoulPositionRegistry'
 import { useGameStore } from '@/store/useGameStore'
+import { sampleHeight, WATER_LEVEL } from '@/world/Terrain'
+import { worldHeightmap } from './HeightmapRegistry'
 
 export class InteractionEngine {
   constructor() {
@@ -11,6 +13,13 @@ export class InteractionEngine {
     this.activeConversations = []
     this.activeCombats = []
     this.pendingInteractions = new Set() // soul IDs with in-flight AI calls
+  }
+
+  reset() {
+    this.interactionCooldowns = {}
+    this.activeConversations = []
+    this.activeCombats = []
+    this.pendingInteractions = new Set()
   }
 
   async checkProximityInteractions(souls, currentYear, world) {
@@ -27,17 +36,53 @@ export class InteractionEngine {
       busyIds.add(c.soulB.id)
     }
 
-    for (let i = 0; i < aliveSouls.length; i++) {
-      for (let j = i + 1; j < aliveSouls.length; j++) {
-        const soulA = aliveSouls[i]
-        const soulB = aliveSouls[j]
-        if (busyIds.has(soulA.id) || busyIds.has(soulB.id)) continue
+    // Per-tick cache: position + on-land flag. sampleHeight is ~2% of sim cost
+    // in the nested loop; hoisting it to once-per-soul eliminates the duplicate
+    // lookups when a soul appears in many candidate pairs.
+    const INTERACTION_RADIUS = 30
+    const candidates = []
+    for (const s of aliveSouls) {
+      if (busyIds.has(s.id)) continue
+      const pos = getSoulPosition(s.id) || s.position
+      if (!pos) continue
+      const x = pos.x ?? pos[0] ?? 0
+      const z = pos.z ?? pos[2] ?? 0
+      const onLand = sampleHeight(worldHeightmap, x, z) >= WATER_LEVEL + 0.3
+      if (!onLand) continue
+      candidates.push({ soul: s, x, z, cx: Math.floor(x / INTERACTION_RADIUS), cz: Math.floor(z / INTERACTION_RADIUS) })
+    }
 
-        const distance = this._getDistance(soulA.position, soulB.position, soulA.id, soulB.id)
+    // Spatial hash: cell keyed by (cx,cz), each cell holds candidate indices.
+    const cells = new Map()
+    for (let i = 0; i < candidates.length; i++) {
+      const key = `${candidates[i].cx}:${candidates[i].cz}`
+      let bucket = cells.get(key)
+      if (!bucket) { bucket = []; cells.set(key, bucket) }
+      bucket.push(i)
+    }
 
-        const sameLocation = soulA.currentLocation && soulA.currentLocation === soulB.currentLocation
-        if ((distance < 30 || sameLocation) && this._shouldInteract(soulA, soulB, currentYear)) {
-          await this.triggerInteraction(soulA, soulB, currentYear, world)
+    const seenPairs = new Set()
+    for (let i = 0; i < candidates.length; i++) {
+      const a = candidates[i]
+      // Check this cell + 8 neighbors
+      for (let dx = -1; dx <= 1; dx++) {
+        for (let dz = -1; dz <= 1; dz++) {
+          const bucket = cells.get(`${a.cx + dx}:${a.cz + dz}`)
+          if (!bucket) continue
+          for (const j of bucket) {
+            if (j <= i) continue
+            const b = candidates[j]
+            const pairKey = a.soul.id < b.soul.id ? `${a.soul.id}::${b.soul.id}` : `${b.soul.id}::${a.soul.id}`
+            if (seenPairs.has(pairKey)) continue
+            seenPairs.add(pairKey)
+
+            const ddx = a.x - b.x, ddz = a.z - b.z
+            const distance = Math.sqrt(ddx * ddx + ddz * ddz)
+            const sameLocation = a.soul.currentLocation && a.soul.currentLocation === b.soul.currentLocation
+            if ((distance < INTERACTION_RADIUS || sameLocation) && this._shouldInteract(a.soul, b.soul, currentYear)) {
+              await this.triggerInteraction(a.soul, b.soul, currentYear, world)
+            }
+          }
         }
       }
     }

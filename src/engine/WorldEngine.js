@@ -7,17 +7,18 @@ import { SoulMemory } from './SoulMemory'
 import { relationshipManager } from './SoulRelations'
 import { soulMind, THOUGHT_TYPES } from './SoulMind'
 import { interactionEngine } from './InteractionEngine'
-import { getGameHour } from './DailyRoutine'
 import { economySystem } from './EconomySystem'
 import { resolveActionIntent } from './SoulActionIntent'
 import { decideBehavior, buildBehaviorWorldState } from './SoulBehavior'
 import { cityEngine } from './CityEngine'
 import { sampleHeight, WATER_LEVEL, FLAT_RADIUS } from '@/world/Terrain'
-import { generateHeightmap } from '@/world/Terrain'
+import { worldHeightmap } from './HeightmapRegistry'
 import { getSoulPosition } from './SoulPositionRegistry'
-
-// Shared heightmap — same seed as WorldScene
-const worldHeightmap = generateHeightmap(1337)
+import {
+  tickCampfires, extinguishCampfires, requestCampfire,
+  getActiveCampfires, clearAllCampfires,
+} from './CampfireRegistry'
+import { populationSystem, POPULATION } from './PopulationSystem'
 
 const HARVEST_MAP = {
   chop_trees:      { type: 'wood',  rate: 0.3   },
@@ -78,7 +79,7 @@ export class WorldEngine {
   initialize() {
     if (this.initialized) return
 
-    // Create the 2 starter souls (Adam & Eve)
+    // Create the starter souls
     this.souls = LLM_SOULS.map((soulData) => this._makeLiveSoul(soulData))
 
     this.store.getState().setSouls(this.souls)
@@ -115,7 +116,6 @@ export class WorldEngine {
       currentAmbition: null,
       lifespan: null,
       deathYear: null,
-      latestThought: null,
       actionLog: [],
     }
   }
@@ -124,7 +124,7 @@ export class WorldEngine {
     if (!this.initialized) this.initialize()
 
     const yearsElapsed = currentYear - this.lastTickYear
-    if (yearsElapsed < 0.05) return // Don't process tiny ticks
+    if (yearsElapsed < 0.005) return // Don't process tiny ticks
 
     this.lastTickYear = currentYear
     const era = getEraForYear(currentYear)
@@ -135,14 +135,20 @@ export class WorldEngine {
       this._processSoulTick(soul, currentYear, era, worldContext, yearsElapsed)
     }
 
+    // Mark background souls (beyond render threshold)
+    const aliveSouls = this.souls.filter((s) => s.isAlive)
+    aliveSouls.forEach((soul, index) => {
+      soul.isBackground = index >= POPULATION.MAX_RENDERED_SOULS
+    })
+
     // Check interactions (every ~1 game year)
     if (currentYear - this.lastInteractionCheck >= 1) {
       this.lastInteractionCheck = currentYear
       this._checkInteractions(currentYear, worldContext)
     }
 
-    // Check breeding (every ~2 game years)
-    if (currentYear - this.lastBreedingCheck >= 2) {
+    // Check breeding (every ~1 game year)
+    if (currentYear - this.lastBreedingCheck >= 1) {
       this.lastBreedingCheck = currentYear
       this._checkBreeding(currentYear, era)
     }
@@ -162,6 +168,28 @@ export class WorldEngine {
       this.store.getState().setWorldState('Peace returns')
     }
 
+    // === Campfire lifecycle ===
+    const hour = Math.floor(this.store.getState().timeOfDay)
+
+    // Souls requesting campfires create them at the gathering spot
+    for (const soul of this.souls) {
+      if (!soul.isAlive) continue
+      if (soul.currentActivity === 'build_campfire') {
+        requestCampfire(soul.id)
+      }
+    }
+
+    // Advance campfire build progress + state
+    tickCampfires()
+
+    // Dawn: extinguish campfires
+    if (hour >= 6 && hour < 7) {
+      extinguishCampfires()
+    }
+
+    // Sync campfires to store for rendering
+    this.store.getState().setCampfires(getActiveCampfires())
+
     // Update store
     this._updateStore(currentYear, era)
   }
@@ -173,6 +201,19 @@ export class WorldEngine {
     }
 
     if (!soul.isAlive) return
+
+    // Background souls: only age and check death, no AI thoughts or animations
+    if (soul.isBackground) {
+      soul.age += yearsElapsed
+      soul.currentYear = currentYear
+      soul.currentEra = era.name
+      if (!soul.lifespan) {
+        const expectancy = LIFE_EXPECTANCY[era.id] || LIFE_EXPECTANCY.ancient
+        soul.lifespan = expectancy.base + (Math.random() - 0.5) * expectancy.variance * 2
+      }
+      this._checkDeath(soul, currentYear, era)
+      return
+    }
 
     // Age
     soul.age += yearsElapsed
@@ -216,15 +257,19 @@ export class WorldEngine {
     // Life stage updates
     this._updateLifeStage(soul)
 
-    // Deep thinking (every 5-15 game years)
-    if (soulMind.shouldThinkDeeply(soul, currentYear)) {
-      soulMind.markThought(soul, currentYear)
-      this._triggerDeepThought(soul, worldContext)
+
+    // Give new souls a default ambition immediately so they start building
+    if (!soul.currentAmbition && soul.age > 8) {
+      soul.currentAmbition = {
+        goal: _defaultAmbitionFor(soul),
+        timeline: 8,
+        raw: 'default',
+      }
     }
 
-    // Ambition update (every 20-30 game years)
+    // Ambition update (every 8-15 game years)
     const lastAmbition = this.lastAmbitionUpdate[soul.id] || -9999
-    if (currentYear - lastAmbition > 20 + Math.random() * 10) {
+    if (currentYear - lastAmbition > 8 + Math.random() * 7) {
       this.lastAmbitionUpdate[soul.id] = currentYear
       this._updateAmbition(soul, worldContext)
     }
@@ -234,7 +279,7 @@ export class WorldEngine {
     const combats = this.store.getState().activeCombats
     const intent = resolveActionIntent(soul, this.souls, conversations, combats)
     intent.year = Math.round(currentYear)
-    intent.hour = getGameHour(currentYear % 1)
+    intent.hour = Math.floor(this.store.getState().timeOfDay)
 
     // Only log if the action text changed (avoid spamming identical entries)
     const lastEntry = soul.actionLog[0]
@@ -257,6 +302,7 @@ export class WorldEngine {
     soul.isAlive = true
     soul.age = 0
     soul.currentYear = currentYear
+    populationSystem.registerBirth(soul)
 
     this.store.getState().addEventLog({
       year: Math.round(currentYear),
@@ -274,8 +320,8 @@ export class WorldEngine {
   }
 
   _updateLifeStage(soul) {
-    if (soul.age < 5) soul.lifeStage = 'infant'
-    else if (soul.age < 13) soul.lifeStage = 'child'
+    if (soul.age < 2) soul.lifeStage = 'infant'
+    else if (soul.age < 8) soul.lifeStage = 'child'
     else if (soul.age < 18) soul.lifeStage = 'adolescent'
     else if (soul.age < 40) soul.lifeStage = 'adult'
     else if (soul.age < 60) soul.lifeStage = 'middle_aged'
@@ -310,6 +356,7 @@ export class WorldEngine {
   async _killSoul(soul, currentYear, cause = 'old_age') {
     soul.isAlive = false
     soul.deathYear = currentYear
+    populationSystem.registerDeath(soul)
 
     const causeText = cause === 'combat' ? 'has fallen in battle' : 'has died'
     this.store.getState().addEventLog({
@@ -322,9 +369,6 @@ export class WorldEngine {
     // Trigger last words
     const worldContext = this._getWorldContext(currentYear, getEraForYear(currentYear))
     soulMind.think(soul, THOUGHT_TYPES.LAST_WORDS, { world: worldContext, priority: 1 })
-      .then((thought) => {
-        soul.latestThought = thought
-      })
 
     // Update all relationships — notify living souls
     for (const otherSoul of this.souls.filter((s) => s.id !== soul.id && s.isAlive)) {
@@ -340,10 +384,33 @@ export class WorldEngine {
         })
       }
     }
+
+    // Pass legacy to living children
+    const children = this.souls.filter(
+      (s) => s.isAlive && s.parentIds?.includes(soul.id)
+    )
+    if (children.length > 0 && soul.memory) {
+      const topMemories = [...soul.memory.episodic]
+        .sort((a, b) => Math.abs(b.emotionalWeight) - Math.abs(a.emotionalWeight))
+        .slice(0, 3)
+      for (const child of children) {
+        for (const mem of topMemories) {
+          child.memory?.addMemory({
+            year: currentYear,
+            type: 'parent_legacy',
+            text: `[${soul.llmName}'s dying memory] ${mem.text}`,
+            emotionalWeight: mem.emotionalWeight * 0.7,
+          })
+        }
+      }
+    }
   }
 
   // ─── Breeding system ────────────────────────────────────────────────────────
   _checkBreeding(currentYear, era) {
+    const aliveCount = this.souls.filter((s) => s.isAlive).length
+    if (aliveCount >= POPULATION.MAX_TOTAL_SOULS) return
+
     // Only check females who are alive and of childbearing age
     const females = this.souls.filter(
       (s) => s.isAlive && s.sex === 'female' && s.age >= 18 && s.age <= 45
@@ -356,16 +423,16 @@ export class WorldEngine {
       // Couple cooldown — 3-7 game years between children
       const coupleKey = [female.id, partner.id].sort().join(':')
       const lastBirth = this.coupleBirthCooldowns[coupleKey] || -9999
-      if (currentYear - lastBirth < 3 + Math.random() * 4) continue
+      if (currentYear - lastBirth < POPULATION.BREEDING_COOLDOWN_MIN + Math.random() * (POPULATION.BREEDING_COOLDOWN_MAX - POPULATION.BREEDING_COOLDOWN_MIN)) continue
 
       // Max 6 children per couple
       const childCount = this.souls.filter(
         (s) => s.parentIds?.includes(female.id) && s.parentIds?.includes(partner.id)
       ).length
-      if (childCount >= 6) continue
+      if (childCount >= POPULATION.MAX_CHILDREN_PER_COUPLE) continue
 
-      // 40% chance per check
-      if (Math.random() > 0.4) continue
+      // Breeding chance per check
+      if (Math.random() > POPULATION.BREEDING_CHANCE) continue
 
       this.coupleBirthCooldowns[coupleKey] = currentYear
       this._birthChild(female, partner, currentYear, era)
@@ -394,6 +461,7 @@ export class WorldEngine {
     child.currentEra = era.name
 
     this.souls.push(child)
+    populationSystem.registerBirth(child)
 
     this.store.getState().addEventLog({
       year: Math.round(currentYear),
@@ -426,6 +494,18 @@ export class WorldEngine {
       emotionalWeight: 8,
     })
 
+    // Inherit ancestral wisdom as early memories
+    if (child.inheritedWisdom && child.inheritedWisdom.length > 0) {
+      for (const wisdom of child.inheritedWisdom) {
+        child.memory.addMemory({
+          year: currentYear,
+          type: 'ancestral_wisdom',
+          text: wisdom,
+          emotionalWeight: 5,
+        })
+      }
+    }
+
     // Initial parent-child relationships
     const relA = relationshipManager.getOrCreate(child.id, parentA.id)
     relA.affection = 70
@@ -438,17 +518,6 @@ export class WorldEngine {
     relB._updateType()
   }
 
-  async _triggerDeepThought(soul, worldContext) {
-    try {
-      const thought = await soulMind.think(soul, THOUGHT_TYPES.INNER_MONOLOGUE, {
-        world: worldContext,
-        priority: 5,
-      })
-      soul.latestThought = thought
-    } catch (e) {
-      // Non-critical, fail silently
-    }
-  }
 
   async _updateAmbition(soul, worldContext) {
     try {
@@ -564,8 +633,6 @@ export class WorldEngine {
           event: { name: eventName, description: event.description },
           world: worldContext,
           priority: 2,
-        }).then((thought) => {
-          soul.latestThought = thought
         })
       }
     }
@@ -576,8 +643,6 @@ export class WorldEngine {
         soulMind.think(soul, THOUGHT_TYPES.SELF_AWARENESS, {
           world: worldContext,
           priority: 1,
-        }).then((thought) => {
-          soul.latestThought = thought
         })
       }
     }
@@ -651,6 +716,19 @@ export class WorldEngine {
     const state = this.store.getState()
     state.setSouls([...this.souls])
     state.setPopulation(this.souls.filter((s) => s.isAlive).length)
+    state.setPopulationStats(populationSystem.getStats())
+  }
+
+  destroy() {
+    this.souls = []
+    this.firedEvents.clear()
+    this.emergentCooldowns = {}
+    this.lastDeepThink = {}
+    this.lastAmbitionUpdate = {}
+    this.coupleBirthCooldowns = {}
+    this.initialized = false
+    this.store = null
+    clearAllCampfires()
   }
 
   getSouls() {
@@ -723,4 +801,11 @@ export function getWorldEngine(store) {
     _worldEngine = new WorldEngine(store)
   }
   return _worldEngine
+}
+
+export function destroyWorldEngine() {
+  if (_worldEngine) {
+    _worldEngine.destroy()
+    _worldEngine = null
+  }
 }

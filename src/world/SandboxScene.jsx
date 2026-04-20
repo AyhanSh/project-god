@@ -72,6 +72,8 @@ export default function SandboxScene() {
       {/* Invisible ground plane for drag raycasting */}
       <DragGround size={PLANE_SIZE} controlsRef={controlsRef} />
 
+
+
       {/* Grid overlay */}
       <Grid
         args={[PLANE_SIZE, PLANE_SIZE]}
@@ -86,22 +88,6 @@ export default function SandboxScene() {
         fadeStrength={1}
         infiniteGrid={false}
       />
-
-      {/* Axis markers at center */}
-      <group position={[0, 0.02, 0]}>
-        <mesh position={[5, 0.1, 0]}>
-          <boxGeometry args={[10, 0.1, 0.1]} />
-          <meshBasicMaterial color="#ff4444" />
-        </mesh>
-        <mesh position={[0, 0.1, 5]}>
-          <boxGeometry args={[0.1, 0.1, 10]} />
-          <meshBasicMaterial color="#4444ff" />
-        </mesh>
-        <mesh position={[0, 2.5, 0]}>
-          <boxGeometry args={[0.1, 5, 0.1]} />
-          <meshBasicMaterial color="#44ff44" />
-        </mesh>
-      </group>
 
       <EdgeWalls size={PLANE_SIZE} />
 

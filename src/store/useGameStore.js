@@ -9,6 +9,7 @@ export const useGameStore = create((set, get) => ({
   currentYear: -3000,
   tickRate: 1,
   speedMultiplier: 1,
+  timeOfDay: 0, // 0-23.99 hours, cycles independently of year
   paused: true,
   gameStarted: false,
 
@@ -39,6 +40,8 @@ export const useGameStore = create((set, get) => ({
   techLevel: 0,
   lastMajorEvent: 'The dawn of civilization',
   population: 6,
+  populationStats: { totalBorn: 0, totalDied: 0, generationStats: {} },
+  setPopulationStats: (stats) => set({ populationStats: stats }),
 
   // === EVENTS ===
   activeEvents: [],
@@ -61,12 +64,14 @@ export const useGameStore = create((set, get) => ({
   showSoulInspector: false,
   showGodPanel: false,
   showDevPanel: false,
+  showDiplomacyPanel: false,
   showEventCinematic: false,
   activeCinematic: null,
   cameraTarget: null,
   cameraMode: 'free', // 'free' | 'follow' | 'cinematic'
   flyMode: false,
   flySpeed: 40, // base fly speed (WASD movement units/sec)
+  flySmoothness: 0, // 0 = instant (no lerp), 1 = very smooth/sluggish
 
   // === DEV OVERRIDES === (null = auto / use engine values)
   devWeather: null,
@@ -93,6 +98,7 @@ export const useGameStore = create((set, get) => ({
   togglePause: () => set((s) => ({ paused: !s.paused })),
   setPaused: (p) => set({ paused: p }),
   setSpeed: (mult) => set({ speedMultiplier: mult }),
+  setTimeOfDay: (t) => set({ timeOfDay: ((t % 24) + 24) % 24 }),
 
   startGame: () => set({ gameStarted: true, paused: false, gameMode: 'game' }),
   startSandbox: () => set({ gameStarted: true, paused: true, gameMode: 'sandbox' }),
@@ -131,6 +137,7 @@ export const useGameStore = create((set, get) => ({
   setCameraMode: (mode) => set({ cameraMode: mode }),
   toggleFlyMode: () => set((s) => ({ flyMode: !s.flyMode })),
   setFlySpeed: (speed) => set({ flySpeed: Math.max(5, Math.min(200, speed)) }),
+  setFlySmoothness: (v) => set({ flySmoothness: Math.max(0, Math.min(1, v)) }),
   increaseFlySpeed: () => set((s) => ({ flySpeed: Math.min(200, s.flySpeed + 10) })),
   decreaseFlySpeed: () => set((s) => ({ flySpeed: Math.max(5, s.flySpeed - 10) })),
 
@@ -158,7 +165,12 @@ export const useGameStore = create((set, get) => ({
   setGodTargetingFirst: (id) => set({ godTargetingFirst: id }),
   clearGodTargeting: () => set({ godTargeting: null, godTargetingFirst: null }),
 
+  // === CAMPFIRES ===
+  campfires: [],
+  setCampfires: (campfires) => set({ campfires }),
+
   // === AUDIO ===
   muted: false,
   toggleMute: () => set((s) => ({ muted: !s.muted })),
+  toggleDiplomacyPanel: () => set((s) => ({ showDiplomacyPanel: !s.showDiplomacyPanel })),
 }))

@@ -3,6 +3,7 @@
 import { relationshipManager } from './SoulRelations'
 import { getSoulPosition } from './SoulPositionRegistry'
 import { getGameHour } from './DailyRoutine'
+import { getActiveCampfires, getNearestLitCampfire } from './CampfireRegistry'
 
 // ─── Action definitions: id → { animation, location, eraLocOverride } ────────
 const ACTIONS = {
@@ -26,6 +27,8 @@ const ACTIONS = {
   social:          { animation: 'talk',      location: 'plaza' },
   rest:            { animation: 'idle',      location: 'home' },
   reflect:         { animation: 'pray',      location: 'home' },
+  build_campfire:  { animation: 'build',     location: 'campfire_spot' },
+  warm_campfire:   { animation: 'idle',      location: 'campfire_spot' },
 }
 
 // Era-specific location overrides
@@ -89,12 +92,11 @@ function scoreMineOre(soul, worldState) {
 
 function scoreBuild(soul, worldState) {
   if (!worldState.hasConstruction) return 0
-  let s = 25
-  if (soul.role === 'Builder') s += 35
-  // Ambition drives building
+  let s = 40
+  if (soul.role === 'Builder') s += 40
+  // Everyone pitches in a bit
   s += (soul.traits?.ambition || 5) * 2
-  // Need resources to build
-  if (worldState.wood < 5 && worldState.stone < 5) s -= 30
+  s += (soul.traits?.empathy || 5)
   return Math.max(0, s)
 }
 
@@ -213,6 +215,36 @@ function scoreReflect(soul) {
   return s
 }
 
+function scoreBuildCampfire(soul, worldState, hour) {
+  const isNight = hour >= 19 || hour < 5
+  if (!isNight) return 0
+  // Only Builder or Farmer roles initiate campfire construction
+  if (soul.role !== 'Builder' && soul.role !== 'Farmer') return 0
+
+  const activeCfs = getActiveCampfires()
+  if (activeCfs.filter((c) => c.state === 'lit').length >= 2) return 0
+
+  // Already building one — absolute commitment, don't switch away
+  if (activeCfs.find((c) => c.builderId === soul.id && c.state === 'building')) return 120
+
+  // Someone else is already building — don't double up
+  if (activeCfs.some((c) => c.state === 'building')) return 0
+
+  // Must clearly beat sleep (70 base + 20 inertia + 10.5 random = ~100)
+  return 110
+}
+
+function scoreWarmCampfire(soul, hour) {
+  const isNight = hour >= 19 || hour < 5
+  if (!isNight) return 0
+  const litCampfires = getActiveCampfires().filter((c) => c.state === 'lit')
+  if (litCampfires.length === 0) return 0
+  // Compete with sleep — not everyone warms, creates natural variety
+  let s = 75
+  s += (soul.traits?.empathy || 5)
+  return s
+}
+
 // ─── Main behavior resolver ─────────────────────────────────────────────────
 
 /**
@@ -220,22 +252,22 @@ function scoreReflect(soul) {
  * Returns { activity, animation, location }
  */
 export function decideBehavior(soul, worldState, currentYear) {
-  const hour = getGameHour(currentYear % 1)
+  const hour = getGameHour(worldState.timeOfDay)
   const eraId = worldState.eraId || 'ancient'
 
-  // Children under 5 just stay home
-  if (soul.age < 5) {
+  // Infants stay home
+  if (soul.age < 2) {
     return { activity: 'rest', animation: 'idle', location: 'home' }
   }
 
-  // Children 5-12: simple activities
-  if (soul.age < 13) {
+  // Young children (2-7): simple activities
+  if (soul.age < 8) {
     if (hour >= 21 || hour < 6) return { activity: 'sleep', animation: 'sleep', location: 'home' }
     if (hour >= 12 && hour < 13) return { activity: 'eat', animation: 'idle', location: 'home' }
-    // Play/study/social
     const roll = Math.random()
-    if (roll < 0.4) return { activity: 'social', animation: 'idle', location: 'plaza' }
-    if (roll < 0.7) return { activity: 'study', animation: 'idle', location: _eraLoc('study', eraId) }
+    if (roll < 0.3) return { activity: 'social', animation: 'idle', location: 'plaza' }
+    if (roll < 0.5) return { activity: 'study', animation: 'idle', location: _eraLoc('study', eraId) }
+    if (roll < 0.7) return { activity: 'gather_herbs', animation: 'work', location: 'forest_edge' }
     return { activity: 'rest', animation: 'idle', location: 'home' }
   }
 
@@ -260,6 +292,8 @@ export function decideBehavior(soul, worldState, currentYear) {
     { id: 'social',          score: scoreSocial(soul) },
     { id: 'rest',            score: scoreRest(soul) },
     { id: 'reflect',         score: scoreReflect(soul) },
+    { id: 'build_campfire',  score: scoreBuildCampfire(soul, worldState, hour) },
+    { id: 'warm_campfire',   score: scoreWarmCampfire(soul, hour) },
   ]
 
   // Daytime penalty for sleep (unless exhausted)
@@ -269,7 +303,7 @@ export function decideBehavior(soul, worldState, currentYear) {
     if (sleepEntry) sleepEntry.score = Math.max(0, sleepEntry.score - 50)
   }
 
-  // Night penalty for outdoor work (unless urgent)
+  // Night penalty for outdoor work (campfire activities exempt)
   const isNight = hour >= 21 || hour < 5
   if (isNight) {
     for (const s of scores) {
@@ -315,9 +349,11 @@ export function buildBehaviorWorldState(store, souls, constructionSites) {
     foodSupply: state.foodSupply || 100,
     warOngoing: state.warOngoing || false,
     hasConstruction: (constructionSites?.length || 0) > 0,
+    constructionCount: constructionSites?.length || 0,
     woundedCount: alive.filter((s) => s.health < 30).length,
     eraId: state.currentEra || 'ancient',
     population: alive.length,
+    timeOfDay: state.timeOfDay || 0,
   }
 }
 

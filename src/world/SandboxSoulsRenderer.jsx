@@ -4,6 +4,7 @@ import { useRef, useState, useEffect, useCallback, useMemo } from 'react'
 import { useFrame } from '@react-three/fiber'
 import { useGameStore } from '@/store/useGameStore'
 import HumanModel from '@/models/humans/HumanModel'
+import { BUILDING_SIZES } from '@/models/buildings/BuildingFactory'
 import { getEraForYear } from '@/data/eras'
 
 export default function SandboxSoulsRenderer({ worldYear, controlsRef }) {
@@ -36,13 +37,16 @@ function SandboxSoulEntity({ soul, worldYear, forceAnimation, controlsRef }) {
   const [targetPos, setTargetPos] = useState(currentPos)
   const [naturalAnim, setNaturalAnim] = useState(soul.currentAction || 'idle')
   const [isHarvesting, setIsHarvesting] = useState(false)
+  const [isBuilding, setIsBuilding] = useState(false)
   const harvestTickRef = useRef(null)
+  const buildTickRef = useRef(null)
   const selectedSoulId = useGameStore((s) => s.selectedSoulId)
   const selectSoul = useGameStore((s) => s.selectSoul)
   const dragSoulId = useGameStore((s) => s.sandboxDragSoulId)
   const harvestTasks = useGameStore((s) => s.sandboxHarvestTasks)
   const trees = useGameStore((s) => s.sandboxTrees)
   const rocks = useGameStore((s) => s.sandboxRocks)
+  const buildings = useGameStore((s) => s.buildings)
 
   const era = getEraForYear(worldYear)
   const isSelected = selectedSoulId === soul.id
@@ -54,37 +58,58 @@ function SandboxSoulEntity({ soul, worldYear, forceAnimation, controlsRef }) {
     [harvestTasks, soul.id],
   )
 
-  // Get harvest target position
-  const harvestTarget = useMemo(() => {
+  // Get task target position (harvest or build)
+  const taskTarget = useMemo(() => {
     if (!myTask) return null
     if (myTask.targetType === 'tree') {
       const tree = trees.find((t) => t.id === myTask.targetId)
       if (!tree || tree.health <= 0) return null
       return { x: tree.position[0], z: tree.position[2] }
     }
-    const rock = rocks.find((r) => r.id === myTask.targetId)
-    if (!rock || rock.health <= 0) return null
-    return { x: rock.position[0], z: rock.position[2] }
-  }, [myTask, trees, rocks])
+    if (myTask.targetType === 'rock') {
+      const rock = rocks.find((r) => r.id === myTask.targetId)
+      if (!rock || rock.health <= 0) return null
+      return { x: rock.position[0], z: rock.position[2] }
+    }
+    if (myTask.targetType === 'building') {
+      const bld = buildings.find((b) => b.id === myTask.targetId)
+      if (!bld || (bld.progress || 0) >= 1) return null
+      // Stand outside the building footprint (buildings render at scale 2)
+      const bx = bld.position[0], bz = bld.position[2]
+      const rawSize = BUILDING_SIZES[bld.type] || { width: 3, depth: 3 }
+      const standOff = Math.max(rawSize.width, rawSize.depth) * 2 + 2
+      const toCenter = Math.atan2(-bz, -bx)
+      return {
+        x: bx + Math.cos(toCenter) * standOff,
+        z: bz + Math.sin(toCenter) * standOff,
+        faceX: bx,
+        faceZ: bz,
+      }
+    }
+    return null
+  }, [myTask, trees, rocks, buildings])
 
-  // Determine animation: harvest overrides natural, forceAnimation overrides all
-  const harvestAnim = isHarvesting
-    ? (myTask?.targetType === 'tree' ? 'chop_tree' : 'mine')
-    : null
-  const animation = forceAnimation || harvestAnim || naturalAnim
+  // Determine animation: task overrides natural, forceAnimation overrides all
+  const taskAnim = isBuilding
+    ? 'build'
+    : isHarvesting
+      ? (myTask?.targetType === 'tree' ? 'chop_tree' : 'mine')
+      : null
+  const animation = forceAnimation || taskAnim || naturalAnim
 
-  // Clear harvest state when task is removed or target is depleted
+  // Clear task state when task is removed or target is depleted/complete
   useEffect(() => {
-    if (!myTask || !harvestTarget) {
+    if (!myTask || !taskTarget) {
       if (isHarvesting) setIsHarvesting(false)
+      if (isBuilding) setIsBuilding(false)
       // Auto-clean stale task
-      if (myTask && !harvestTarget) {
+      if (myTask && !taskTarget) {
         useGameStore.setState((s) => ({
           sandboxHarvestTasks: s.sandboxHarvestTasks.filter((t) => t.soulId !== soul.id),
         }))
       }
     }
-  }, [myTask, harvestTarget, isHarvesting, soul.id])
+  }, [myTask, taskTarget, isHarvesting, isBuilding, soul.id])
 
   // Auto-damage while harvesting
   useEffect(() => {
@@ -148,6 +173,38 @@ function SandboxSoulEntity({ soul, worldYear, forceAnimation, controlsRef }) {
     return () => { if (harvestTickRef.current) clearInterval(harvestTickRef.current) }
   }, [isHarvesting, myTask?.targetId, myTask?.targetType])
 
+  // Auto-progress while building
+  useEffect(() => {
+    if (!isBuilding || !myTask || myTask.targetType !== 'building') {
+      if (buildTickRef.current) { clearInterval(buildTickRef.current); buildTickRef.current = null }
+      return
+    }
+    buildTickRef.current = setInterval(() => {
+      const state = useGameStore.getState()
+      const bld = state.buildings.find((b) => b.id === myTask.targetId)
+      if (!bld || (bld.progress || 0) >= 1) {
+        useGameStore.setState((s) => ({
+          sandboxHarvestTasks: s.sandboxHarvestTasks.filter((t) => t.targetId !== myTask.targetId),
+        }))
+        setIsBuilding(false)
+        if (bld && (bld.progress || 0) >= 1) {
+          state.addEventLog({
+            year: Math.round(state.currentYear),
+            text: `[SANDBOX] ${soul.llmName} finished building ${bld.type.replace(/_/g, ' ')}!`,
+            type: 'build',
+          })
+        }
+        return
+      }
+      useGameStore.setState((s) => ({
+        buildings: s.buildings.map((b) =>
+          b.id === myTask.targetId ? { ...b, progress: Math.min(1, (b.progress || 0) + 0.04) } : b
+        ),
+      }))
+    }, 500)
+    return () => { if (buildTickRef.current) clearInterval(buildTickRef.current) }
+  }, [isBuilding, myTask?.targetId, myTask?.targetType, soul.llmName])
+
   // Sync position from store when being dragged
   useEffect(() => {
     if (isDragging) {
@@ -203,19 +260,17 @@ function SandboxSoulEntity({ soul, worldYear, forceAnimation, controlsRef }) {
       return
     }
 
-    // Harvest task: walk to target, then chop/mine
-    if (myTask && harvestTarget && !forceAnimation) {
-      const hdx = harvestTarget.x - currentPos.x
-      const hdz = harvestTarget.z - currentPos.z
+    // Task: walk to target, then work
+    if (myTask && taskTarget && !forceAnimation) {
+      const hdx = taskTarget.x - currentPos.x
+      const hdz = taskTarget.z - currentPos.z
       const hdist = Math.sqrt(hdx * hdx + hdz * hdz)
 
-      // Always face the target
-      g.rotation.y = Math.atan2(hdx, hdz)
-
-      if (hdist > 2.0) {
+      if (hdist > 1.5) {
         // Walk toward target
+        g.rotation.y = Math.atan2(hdx, hdz)
         const speed = 10 * delta
-        const step = Math.min(speed, hdist - 1.5)
+        const step = Math.min(speed, hdist - 1.0)
         if (step > 0.05) {
           const newX = currentPos.x + (hdx / hdist) * step
           const newZ = currentPos.z + (hdz / hdist) * step
@@ -225,9 +280,21 @@ function SandboxSoulEntity({ soul, worldYear, forceAnimation, controlsRef }) {
         }
         if (naturalAnim !== 'walk') setNaturalAnim('walk')
         if (isHarvesting) setIsHarvesting(false)
+        if (isBuilding) setIsBuilding(false)
       } else {
-        // Close enough — start harvesting
-        if (!isHarvesting) setIsHarvesting(true)
+        // Arrived — face the resource/building and start working
+        const faceX = taskTarget.faceX ?? taskTarget.x
+        const faceZ = taskTarget.faceZ ?? taskTarget.z
+        const fdx = faceX - currentPos.x
+        const fdz = faceZ - currentPos.z
+        if (fdx * fdx + fdz * fdz > 0.01) {
+          g.rotation.y = Math.atan2(fdx, fdz)
+        }
+        if (myTask.targetType === 'building') {
+          if (!isBuilding) setIsBuilding(true)
+        } else {
+          if (!isHarvesting) setIsHarvesting(true)
+        }
       }
       g.position.y = 0
       return

@@ -82,7 +82,7 @@ function generatePersonality(traits) {
 }
 
 // ─── Soul factory ────────────────────────────────────────────────────────────
-export function createSoul({ sex, birthYear, traits, parentIds, generation, name, role, aura, skinTone }) {
+export function createSoul({ sex, birthYear, traits, parentIds, generation, name, role, aura, skinTone, inheritedWisdom, deepestFear, greatestDesire }) {
   const t = traits || randomTraits()
   return {
     id: `soul_${nanoid(8)}`,
@@ -92,14 +92,15 @@ export function createSoul({ sex, birthYear, traits, parentIds, generation, name
     skinTone: skinTone || SKIN_TONES[Math.floor(Math.random() * SKIN_TONES.length)],
     personality: generatePersonality(t),
     role: role || ROLES[Math.floor(Math.random() * ROLES.length)],
-    deepestFear: 'The unknown',
-    greatestDesire: 'To find meaning',
+    deepestFear: deepestFear || 'The unknown',
+    greatestDesire: greatestDesire || 'To find meaning',
     moralCode: 'Live with purpose',
     worldview: 'The world is vast and full of mystery',
     birthYear,
     traits: t,
     parentIds: parentIds || [],
     generation: generation || 1,
+    inheritedWisdom: inheritedWisdom || [],
   }
 }
 
@@ -107,8 +108,42 @@ export function createChildSoul(parentA, parentB, birthYear) {
   const sex = Math.random() < 0.5 ? 'male' : 'female'
   const traits = blendTraits(parentA.traits, parentB.traits)
   const generation = Math.max(parentA.generation || 1, parentB.generation || 1) + 1
-  // Blend skin tone from one parent randomly
   const skinTone = Math.random() < 0.5 ? parentA.skinTone : parentB.skinTone
+
+  // Inherit wisdom from parents
+  const inheritedWisdom = []
+  if (parentA.memory?.consolidatedWisdom) {
+    inheritedWisdom.push(...parentA.memory.consolidatedWisdom.slice(0, 3).map((w) => `From ${parentA.llmName}: ${w.summary || w}`))
+  }
+  if (parentB.memory?.consolidatedWisdom) {
+    inheritedWisdom.push(...parentB.memory.consolidatedWisdom.slice(0, 3).map((w) => `From ${parentB.llmName}: ${w.summary || w}`))
+  }
+
+  // Inherit fears/desires with parental influence
+  const deepestFear = Math.random() < 0.4
+    ? (parentA.deepestFear || parentB.deepestFear)
+    : undefined
+  const greatestDesire = Math.random() < 0.4
+    ? (parentA.greatestDesire || parentB.greatestDesire)
+    : undefined
+
+  // Role inheritance: 40% from a parent, 60% random
+  let role
+  if (Math.random() < 0.4) {
+    role = Math.random() < 0.5 ? parentA.role : parentB.role
+    const ROLE_FAMILIES = {
+      Farmer: ['Farmer', 'Hunter'],
+      Hunter: ['Hunter', 'Farmer'],
+      Builder: ['Builder', 'Artisan'],
+      Artisan: ['Artisan', 'Builder'],
+      Warrior: ['Warrior', 'Hunter'],
+      Healer: ['Healer', 'Priest'],
+      Priest: ['Priest', 'Healer'],
+      Trader: ['Trader', 'Artisan'],
+    }
+    const family = ROLE_FAMILIES[role] || [role]
+    role = family[Math.floor(Math.random() * family.length)]
+  }
 
   return createSoul({
     sex,
@@ -117,10 +152,14 @@ export function createChildSoul(parentA, parentB, birthYear) {
     parentIds: [parentA.id, parentB.id],
     generation,
     skinTone,
+    inheritedWisdom,
+    deepestFear,
+    greatestDesire,
+    role,
   })
 }
 
-// ─── The 2 starter souls (Adam & Eve) ────────────────────────────────────────
+// ─── The 6 starter souls ─────────────────────────────────────────────────────
 export const LLM_SOULS = [
   createSoul({
     sex: 'male',
@@ -139,5 +178,41 @@ export const LLM_SOULS = [
     aura: '#E91E63',
     skinTone: '#cc785c',
     traits: { wisdom: 7, empathy: 8, courage: 5, ambition: 5, creativity: 7 },
+  }),
+  createSoul({
+    sex: 'male',
+    birthYear: -2992,
+    name: 'Kael',
+    role: 'Warrior',
+    aura: '#FF6B35',
+    skinTone: '#8d6e4a',
+    traits: { wisdom: 5, empathy: 4, courage: 9, ambition: 7, creativity: 3 },
+  }),
+  createSoul({
+    sex: 'female',
+    birthYear: -2991,
+    name: 'Lyra',
+    role: 'Priest',
+    aura: '#9C27B0',
+    skinTone: '#d4a574',
+    traits: { wisdom: 8, empathy: 6, courage: 4, ambition: 5, creativity: 8 },
+  }),
+  createSoul({
+    sex: 'male',
+    birthYear: -2990,
+    name: 'Theron',
+    role: 'Trader',
+    aura: '#34A853',
+    skinTone: '#b8956a',
+    traits: { wisdom: 6, empathy: 5, courage: 5, ambition: 8, creativity: 4 },
+  }),
+  createSoul({
+    sex: 'female',
+    birthYear: -2989,
+    name: 'Selene',
+    role: 'Builder',
+    aura: '#10A37F',
+    skinTone: '#c09070',
+    traits: { wisdom: 5, empathy: 6, courage: 6, ambition: 7, creativity: 7 },
   }),
 ]

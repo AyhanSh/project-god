@@ -167,6 +167,18 @@ function buildHuman(skinColor, hairColor, cloth, aura, era) {
   pickGroup.visible = false
   arms.R.add(pickGroup)
 
+  // Hammer — short handle + rectangular head
+  const hammerGroup = new THREE.Group()
+  hammerGroup.position.set(0, -0.68, 0.06)
+  const hammerHandle = new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.02, 0.32, 5), woodMat)
+  hammerHandle.position.set(0, -0.16, 0)
+  hammerGroup.add(hammerHandle)
+  const hammerHead = new THREE.Mesh(new THREE.BoxGeometry(0.07, 0.06, 0.14), metalMat)
+  hammerHead.position.set(0, -0.32, 0)
+  hammerGroup.add(hammerHead)
+  hammerGroup.visible = false
+  arms.R.add(hammerGroup)
+
   // LEGS
   const legs = {}
   for (const side of ['L', 'R']) {
@@ -194,7 +206,7 @@ function buildHuman(skinColor, hairColor, cloth, aura, era) {
     legs[side] = legGroup
   }
 
-  return { group, head, arms, legs, torso, axe: axeGroup, pickaxe: pickGroup }
+  return { group, head, arms, legs, torso, axe: axeGroup, pickaxe: pickGroup, hammer: hammerGroup }
 }
 
 // ─── Dispose all geometries and materials in a group ─────────────────────────
@@ -225,6 +237,7 @@ function animateHuman(parts, animName, t) {
   // Toggle held tools
   if (parts.axe) parts.axe.visible = (animName === 'chop_tree')
   if (parts.pickaxe) parts.pickaxe.visible = (animName === 'mine')
+  if (parts.hammer) parts.hammer.visible = (animName === 'build')
 
   switch (animName) {
     case 'idle': {
@@ -368,11 +381,23 @@ function animateHuman(parts, animName, t) {
       break
     }
     case 'build': {
-      arms.L.rotation.x = -0.3 + Math.sin(t * 3.5) * 0.8
-      arms.R.rotation.x = -0.5 + Math.sin(t * 3.5 + 0.3) * 0.6
-      if (torso) torso.rotation.x = Math.sin(t * 3.5) * 0.1
-      legs.L.rotation.x = 0.05
-      legs.R.rotation.x = -0.05
+      // Hammering motion: right arm swings down with hammer, left steadies
+      const hammer = Math.sin(t * 4)
+      // Right arm: overhead swing down (holding hammer)
+      arms.R.rotation.x = -1.4 + hammer * 0.8
+      arms.R.rotation.z = -0.15
+      // Left arm: holds material in place / steadies
+      arms.L.rotation.x = -0.7 + Math.sin(t * 2) * 0.15
+      arms.L.rotation.z = 0.25
+      // Torso leans forward into the strike
+      if (torso) torso.rotation.x = -0.15 + hammer * 0.08
+      // Legs planted, slight weight shift
+      legs.L.rotation.x = 0.08
+      legs.R.rotation.x = -0.04
+      // Head looks slightly up at the structure
+      head.rotation.x = -0.15 + Math.sin(t * 1.5) * 0.05
+      // Small body bob on each hammer strike
+      group.position.y = Math.max(0, -hammer * 0.03)
       break
     }
     case 'greet': {

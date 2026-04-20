@@ -6,7 +6,7 @@ import { useGameStore } from '@/store/useGameStore'
 import FlyCamera from './FlyCamera'
 import { ERAS } from '@/data/eras'
 
-import { generateHeightmap } from './Terrain'
+import { worldHeightmap } from '@/engine/HeightmapRegistry'
 import Terrain from './Terrain'
 import Sky from './Sky'
 import Water from './Water'
@@ -16,10 +16,11 @@ import Rocks from '@/models/nature/Rocks'
 import Caves from './Caves'
 import SoulsRenderer from '@/souls/SoulsRenderer'
 import BuildingsRenderer from '@/world/BuildingsRenderer'
+import CampfireRenderer from '@/world/CampfireRenderer'
 
 const DEFAULT_ERA = ERAS[0]
 
-const WORLD_HEIGHTMAP = generateHeightmap(1337)
+const WORLD_HEIGHTMAP = worldHeightmap
 
 export default function WorldScene() {
   const currentEra     = useGameStore((s) => s.currentEra)
@@ -58,6 +59,9 @@ export default function WorldScene() {
 
       {/* Buildings */}
       <BuildingsRenderer />
+
+      {/* Night campfires */}
+      <CampfireRenderer />
     </>
   )
 }

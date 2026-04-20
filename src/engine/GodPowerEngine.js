@@ -51,8 +51,6 @@ export class GodPowerEngine {
       otherSoul: null,
       godMessage: text,
       priority: 1,
-    }).then((thought) => {
-      soul.latestThought = thought
     })
     store.getState().addEventLog({
       year: Math.round(soul.currentYear),
@@ -149,8 +147,6 @@ export class GodPowerEngine {
     soulMind.think(soul, THOUGHT_TYPES.SELF_AWARENESS, {
       world: { currentYear: soul.currentYear, currentEra: soul.currentEra },
       priority: 1,
-    }).then((thought) => {
-      soul.latestThought = thought
     })
     store.getState().addEventLog({
       year: Math.round(soul.currentYear),

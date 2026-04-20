@@ -5,12 +5,13 @@ import { Canvas } from '@react-three/fiber'
 import { useGameStore } from '@/store/useGameStore'
 import { getEraForYear } from '@/data/eras'
 import { aiQueue } from '@/engine/AIQueue'
-import { getWorldEngine } from '@/engine/WorldEngine'
+import { getWorldEngine, destroyWorldEngine } from '@/engine/WorldEngine'
 import { weatherSystem } from '@/engine/WeatherSystem'
 import { economySystem, diplomacySystem } from '@/engine/EconomySystem'
 import { cityEngine } from '@/engine/CityEngine'
 import { audioEngine } from '@/engine/AudioEngine'
 import { saveLoadEngine } from '@/engine/SaveLoadEngine'
+import { resetAllEngines } from '@/engine/resetEngines'
 
 import WorldScene from '@/world/WorldScene'
 import HUD from '@/ui/HUD'
@@ -18,32 +19,46 @@ import SoulInspector from '@/ui/SoulInspector'
 import EventLog from '@/ui/EventLog'
 import GodPanel from '@/ui/GodPanel'
 import DevPanel from '@/ui/DevPanel'
-import SpeechBubbleOverlay from '@/ui/SpeechBubbleOverlay'
 import EventCinematicOverlay from '@/events/EventCinematicOverlay'
+import { CanvasErrorBoundary, UIErrorBoundary } from '@/ui/ErrorBoundary'
+import OnboardingOverlay from '@/ui/OnboardingOverlay'
+import DiplomacyPanel from '@/ui/DiplomacyPanel'
 
 export default function GameWorld() {
   const engineRef = useRef(null)
   const store = useGameStore
 
   useEffect(() => {
+    // Clear any residual state from a previous session (singletons persist
+    // across HMR and menu→game transitions).
+    resetAllEngines()
     aiQueue.start()
     const worldEngine = getWorldEngine(store)
     worldEngine.initialize()
     engineRef.current = worldEngine
 
     // Main simulation tick at 10Hz
+    const TICK_MS = 100 // 10Hz
+    const HOURS_PER_TICK_1X = 24 / 600   // 24 hours in 600 ticks (60s) = 0.04 hours/tick
+    const YEARS_PER_TICK_1X = 1 / 60     // ~0.01667 years/tick → 1 year per 6 seconds
+
     const interval = setInterval(() => {
       const state = store.getState()
       if (state.paused) return
 
-      const yearsPerTick = 0.1 * state.speedMultiplier
+      const speed = state.speedMultiplier
+
+      // Advance time of day (drives day/night cycle, visuals, routines)
+      const newTimeOfDay = state.timeOfDay + HOURS_PER_TICK_1X * speed
+      state.setTimeOfDay(newTimeOfDay)
+
+      // Advance game year at slower rate (drives era transitions, events, aging)
+      const yearsPerTick = YEARS_PER_TICK_1X * speed
       const newYear = state.currentYear + yearsPerTick
       const era = getEraForYear(newYear)
 
-      // Update year
       state.setYear(newYear)
 
-      // Era transition
       if (era.id !== state.currentEra) {
         state.setEra(era.id, era)
         state.addEventLog({
@@ -53,24 +68,16 @@ export default function GameWorld() {
         })
       }
 
-      // World engine tick (souls, events, interactions)
       worldEngine.tick(newYear)
 
-      // Weather (update every ~5 ticks for performance)
       if (Math.random() < 0.2) {
         weatherSystem.update(newYear, store)
       }
 
-      // Economy
-      economySystem.update(worldEngine.getSouls(), state.buildings, newYear, store)
-
-      // Diplomacy
+      economySystem.update(worldEngine.getSouls(), state.buildings, newYear, store, era)
       diplomacySystem.update(worldEngine.getSouls(), cityEngine.getCities(), newYear, store)
-
-      // City growth
       cityEngine.update(worldEngine.getSouls(), newYear, era, store)
-
-    }, 100) // 10 ticks per second
+    }, TICK_MS)
 
     // Audio: subscribe to state changes for SFX + ambient + mute
     let lastEventTimestamp = 0
@@ -110,28 +117,36 @@ export default function GameWorld() {
       clearInterval(autoSaveInterval)
       aiQueue.stop()
       unsubAudio()
+      destroyWorldEngine()
+      resetAllEngines()
     }
   }, [])
 
   return (
     <div id="game-root">
-      <Canvas
-        camera={{ position: [0, 60, 90], fov: 55, near: 0.1, far: 2000 }}
-        shadows
-        gl={{ antialias: true, alpha: false }}
-        style={{ position: 'absolute', inset: 0 }}
-      >
-        <WorldScene />
-      </Canvas>
+      <CanvasErrorBoundary>
+        <Canvas
+          camera={{ position: [0, 60, 90], fov: 55, near: 0.1, far: 2000 }}
+          shadows
+          gl={{ antialias: true, alpha: false }}
+          style={{ position: 'absolute', inset: 0 }}
+        >
+          <WorldScene />
+        </Canvas>
+      </CanvasErrorBoundary>
+
+      <OnboardingOverlay />
 
       {/* UI Overlays */}
-      <HUD />
-      <SoulInspector />
-      <EventLog />
-      <GodPanel />
-      <DevPanel />
-      <SpeechBubbleOverlay />
-      <EventCinematicOverlay />
+      <UIErrorBoundary>
+        <HUD />
+        <SoulInspector />
+        <EventLog />
+        <GodPanel />
+        <DevPanel />
+        <DiplomacyPanel />
+        <EventCinematicOverlay />
+      </UIErrorBoundary>
     </div>
   )
 }

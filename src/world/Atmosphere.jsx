@@ -31,14 +31,17 @@ export default function Atmosphere() {
 
   const currentEra     = useGameStore((s) => s.currentEra)
   const currentEraData = useGameStore((s) => s.currentEraData)
+  const timeOfDay      = useGameStore((s) => s.timeOfDay)
   const devFogDensity  = useGameStore((s) => s.devFogDensity)
   const devTimeOfDay   = useGameStore((s) => s.devTimeOfDay)
 
   const era = currentEraData ?? ERAS.find((e) => e.id === currentEra) ?? DEFAULT_ERA
 
+  // Compute game hour: dev override takes priority, otherwise derive from store timeOfDay
+  const gameHour = devTimeOfDay !== null ? devTimeOfDay : timeOfDay
   const fogDensity = devFogDensity ?? era.fogDensity
-  const timeFactor = devTimeOfDay !== null ? dayIntensity(devTimeOfDay) : 1
-  const sunPos = devTimeOfDay !== null ? sunPosition(devTimeOfDay) : [60, 80, 40]
+  const timeFactor = dayIntensity(gameHour)
+  const sunPos = sunPosition(gameHour)
 
   // Apply scene fog whenever era or dev override changes
   useEffect(() => {

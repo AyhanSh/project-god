@@ -3,16 +3,6 @@
 import { aiQueue, buildSoulSystemPrompt } from './AIQueue'
 
 export const THOUGHT_TYPES = {
-  INNER_MONOLOGUE: {
-    id: 'inner_monologue',
-    prompt: (soul) => `It is the year ${soul.currentYear}. You are ${soul.age} years old.
-Reflect privately on your life right now. What are you feeling? What do you want?
-What weighs on your mind? This is your private thought — no one else will hear it.`,
-    maxTokens: 200,
-    displayAs: 'thought_bubble',
-    logToMemory: true,
-  },
-
   EVENT_REACTION: {
     id: 'event_reaction',
     prompt: (soul, event) => `${event?.name || 'A great event'} has just occurred. You are personally witnessing/experiencing this.
@@ -169,7 +159,6 @@ export class SoulMind {
 
   _estimateEmotionalWeight(thoughtTypeId) {
     const weights = {
-      inner_monologue: 2,
       event_reaction: 5,
       conversation_opener: 1,
       conversation_reply: 1,
@@ -184,16 +173,6 @@ export class SoulMind {
     return weights[thoughtTypeId] || 3
   }
 
-  shouldThinkDeeply(soul, currentYear) {
-    const key = soul.id
-    const lastThink = this.thinkCooldowns[key] || -9999
-    const interval = 5 + Math.random() * 10 // 5-15 game years
-    return (currentYear - lastThink) >= interval
-  }
-
-  markThought(soul, currentYear) {
-    this.thinkCooldowns[soul.id] = currentYear
-  }
 }
 
 export const soulMind = new SoulMind()

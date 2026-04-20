@@ -1,23 +1,37 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { Html } from '@react-three/drei'
 import { useGameStore } from '@/store/useGameStore'
 
+/**
+ * Turn-based speech bubble that appears above a soul during conversation.
+ * Shows each soul's line only when it's their turn to speak:
+ *   Turn 0 (0-4s):  Soul A speaks (opener)
+ *   Turn 1 (4-8s):  Soul B speaks (reply)
+ *   Turn 2 (8-12s): Soul A speaks (follow-up)
+ */
 export default function SoulDialogueBubble({ soulId, soulName, aura, visible = true }) {
   const conversations = useGameStore((s) => s.activeConversations)
-  const [lineIndex, setLineIndex] = useState(0)
+  const [turn, setTurn] = useState(0)
+  const convoRef = useRef(null)
 
   const convo = conversations.find(
     (c) => c.soulA.id === soulId || c.soulB.id === soulId
   )
 
-  // Cycle through dialogue lines every 4 seconds
+  // Advance turns every 4 seconds
   useEffect(() => {
-    if (!convo) return
-    setLineIndex(0)
+    if (!convo) { convoRef.current = null; return }
+
+    // Reset turns when a new conversation starts
+    if (convoRef.current !== convo.timestamp) {
+      convoRef.current = convo.timestamp
+      setTurn(0)
+    }
+
     const timer = setInterval(() => {
-      setLineIndex((i) => i + 1)
+      setTurn((t) => Math.min(t + 1, 2))
     }, 4000)
     return () => clearInterval(timer)
   }, [convo?.timestamp])
@@ -25,17 +39,22 @@ export default function SoulDialogueBubble({ soulId, soulName, aura, visible = t
   if (!convo || !visible) return null
 
   const isSoulA = convo.soulA.id === soulId
-  const lines = isSoulA
-    ? [convo.soulA.text, convo.soulA.followUp].filter(Boolean)
-    : [convo.soulB.text].filter(Boolean)
-  const currentLine = lines[lineIndex % lines.length] || lines[0]
+  const isWedding = convo.type === 'wedding'
+
+  // Determine if this soul should show text this turn
+  // Turn 0: A speaks, Turn 1: B speaks, Turn 2: A speaks (follow-up)
+  let currentLine = null
+  if (isSoulA && turn === 0) currentLine = convo.soulA.text
+  else if (!isSoulA && turn === 1) currentLine = convo.soulB.text
+  else if (isSoulA && turn === 2) currentLine = convo.soulA.followUp
+
   if (!currentLine) return null
 
-  const isWedding = convo.type === 'wedding'
+  const accentColor = isWedding ? '#ff6090' : aura || '#6B5CE7'
 
   return (
     <Html
-      position={[0, 2.6, 0]}
+      position={[0, 2.8, 0]}
       center
       distanceFactor={15}
       zIndexRange={[10, 0]}
@@ -43,54 +62,61 @@ export default function SoulDialogueBubble({ soulId, soulName, aura, visible = t
     >
       <div
         style={{
-          background: 'rgba(10, 10, 26, 0.9)',
-          backdropFilter: 'blur(8px)',
-          borderLeft: `2px solid ${isWedding ? '#ff6090' : aura || '#6B5CE7'}`,
-          borderRadius: '6px 6px 6px 0',
-          padding: '6px 10px',
-          maxWidth: '160px',
+          background: 'rgba(8, 8, 22, 0.92)',
+          backdropFilter: 'blur(10px)',
+          border: `1px solid ${accentColor}30`,
+          borderLeft: `3px solid ${accentColor}`,
+          borderRadius: '8px 8px 8px 0',
+          padding: '8px 12px',
+          maxWidth: '180px',
+          minWidth: '80px',
           fontFamily: 'Georgia, serif',
           position: 'relative',
+          boxShadow: `0 4px 16px rgba(0,0,0,0.4), inset 0 0 20px ${accentColor}08`,
+          animation: 'bubbleFadeIn 0.3s ease-out',
         }}
       >
+        {/* Soul name */}
         <div
           style={{
             fontSize: '9px',
-            fontWeight: 600,
-            color: isWedding ? '#ff6090' : aura || '#6B5CE7',
-            letterSpacing: '0.3px',
-            marginBottom: '3px',
+            fontWeight: 700,
+            color: accentColor,
+            letterSpacing: '0.5px',
+            marginBottom: '4px',
+            textShadow: `0 0 8px ${accentColor}40`,
           }}
         >
           {soulName}
         </div>
+
+        {/* Speech text */}
         <p
           style={{
-            fontSize: '10px',
-            color: '#c0b8d8',
-            fontStyle: 'italic',
-            lineHeight: 1.4,
+            fontSize: '11px',
+            color: '#d8d4e8',
+            lineHeight: 1.45,
             margin: 0,
-            opacity: 0.85,
             display: '-webkit-box',
-            WebkitLineClamp: 3,
+            WebkitLineClamp: 4,
             WebkitBoxOrient: 'vertical',
             overflow: 'hidden',
           }}
         >
-          {currentLine.slice(0, 120)}
+          {currentLine.slice(0, 150)}
         </p>
+
         {/* Speech bubble pointer */}
         <div
           style={{
             position: 'absolute',
-            bottom: '-6px',
-            left: '12px',
+            bottom: '-7px',
+            left: '14px',
             width: 0,
             height: 0,
-            borderLeft: '6px solid transparent',
-            borderRight: '6px solid transparent',
-            borderTop: '6px solid rgba(10, 10, 26, 0.9)',
+            borderLeft: '7px solid transparent',
+            borderRight: '7px solid transparent',
+            borderTop: `7px solid rgba(8, 8, 22, 0.92)`,
           }}
         />
       </div>

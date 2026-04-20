@@ -154,6 +154,75 @@ const DAILY_SCHEDULES = {
   ],
 }
 
+// Role families carry role identity across eras without enumerating all
+// role×era permutations. A Farmer in the Modern era still farms; they just
+// do it at a larger scale with better tools (the mechanical difference comes
+// from EconomySystem's tech multiplier on output).
+const ROLE_TO_ERA_ACTIVITY = {
+  farmer: {
+    ancient: { location: 'farm', activity: 'work' },
+    medieval: { location: 'farm', activity: 'tend_fields' },
+    renaissance: { location: 'farm', activity: 'cultivate' },
+    industrial: { location: 'factory', activity: 'operate_machinery' },
+    modern: { location: 'factory', activity: 'manage_production' },
+    singularity: { location: 'arcology', activity: 'oversee_synthesis' },
+  },
+  warrior: {
+    ancient: { location: 'barracks', activity: 'training' },
+    medieval: { location: 'barracks', activity: 'training' },
+    renaissance: { location: 'barracks', activity: 'drill' },
+    industrial: { location: 'barracks', activity: 'rifle_drill' },
+    modern: { location: 'office', activity: 'strategic_planning' },
+    singularity: { location: 'quantum_server', activity: 'cyber_defense' },
+  },
+  healer: {
+    ancient: { location: 'temple', activity: 'heal' },
+    medieval: { location: 'cathedral', activity: 'heal' },
+    renaissance: { location: 'university', activity: 'practice_medicine' },
+    industrial: { location: 'university', activity: 'surgery' },
+    modern: { location: 'office', activity: 'medical_research' },
+    singularity: { location: 'bio_dome', activity: 'nanite_therapy' },
+  },
+  trader: {
+    ancient: { location: 'market', activity: 'trade' },
+    medieval: { location: 'market', activity: 'trade' },
+    renaissance: { location: 'market', activity: 'broker_deals' },
+    industrial: { location: 'factory', activity: 'manage_imports' },
+    modern: { location: 'office', activity: 'run_markets' },
+    singularity: { location: 'quantum_server', activity: 'arbitrage_networks' },
+  },
+  priest: {
+    ancient: { location: 'temple', activity: 'counsel' },
+    medieval: { location: 'cathedral', activity: 'counsel' },
+    renaissance: { location: 'cathedral', activity: 'teach' },
+    industrial: { location: 'cathedral', activity: 'sermon' },
+    modern: { location: 'office', activity: 'community_work' },
+    singularity: { location: 'mind_palace', activity: 'commune' },
+  },
+  builder: {
+    ancient: { location: 'construction', activity: 'build_structure' },
+    medieval: { location: 'construction', activity: 'build_castle' },
+    renaissance: { location: 'construction', activity: 'design_buildings' },
+    industrial: { location: 'factory', activity: 'assemble_steelwork' },
+    modern: { location: 'office', activity: 'engineer_structures' },
+    singularity: { location: 'arcology', activity: 'fabricate_megastructures' },
+  },
+}
+
+function _applyRoleTint(baseSchedule, role, eraId) {
+  const override = ROLE_TO_ERA_ACTIVITY[role]?.[eraId]
+  if (!override) return baseSchedule
+  // Replace the 'work' or 'factory'/'office' slot with the role-era activity
+  // so a Farmer in the Modern era actually farms (operates modern machinery)
+  // rather than doing a generic office job.
+  return baseSchedule.map((entry) => {
+    if (entry.activity === 'work') {
+      return { ...entry, activity: override.activity, location: override.location }
+    }
+    return entry
+  })
+}
+
 export function getSoulSchedule(soul, era) {
   const role = (soul.role || 'default').toLowerCase().replace(/\s+/g, '_')
   const eraId = era?.id || 'ancient'
@@ -162,18 +231,17 @@ export function getSoulSchedule(soul, era) {
   const specificKey = `${eraId}_${role}`
   if (DAILY_SCHEDULES[specificKey]) return DAILY_SCHEDULES[specificKey]
 
-  // Try era default
+  // Fall back to era default, but tint the 'work' slot with the role's
+  // era-appropriate activity so role identity survives era transitions.
   const eraKey = `${eraId}_default`
-  if (DAILY_SCHEDULES[eraKey]) return DAILY_SCHEDULES[eraKey]
+  if (DAILY_SCHEDULES[eraKey]) return _applyRoleTint(DAILY_SCHEDULES[eraKey], role, eraId)
 
   return DAILY_SCHEDULES.default
 }
 
-// Convert game year to approximate hour of day
-// Each game year is compressed — we cycle through hours based on sub-year fraction
-export function getGameHour(yearFraction) {
-  const frac = ((yearFraction % 1) + 1) % 1
-  return Math.floor(frac * 24)
+// Convert timeOfDay (0-23.99) to integer hour (0-23)
+export function getGameHour(timeOfDay) {
+  return Math.floor(((timeOfDay % 24) + 24) % 24)
 }
 
 export function getCurrentScheduleEntry(schedule, hour) {
@@ -188,7 +256,8 @@ export function getCurrentScheduleEntry(schedule, hour) {
   return current
 }
 
-// Movement locations — spread across the terrain
+// Movement locations — close enough to the city centre that the player can see
+// souls working, but spread out enough for variety.
 export const LOCATION_POSITIONS = {
   // City-centre locations (within the flat building zone)
   home: { x: 0, z: 0, range: 8 },
@@ -201,25 +270,28 @@ export const LOCATION_POSITIONS = {
   quantum_server: { x: 16, z: 16, range: 6 },
   arcology: { x: 0, z: 0, range: 10 },
 
-  // Near-city locations (edge of flat zone → gentle hills)
-  temple: { x: 50, z: -40, range: 12 },
-  cathedral: { x: 50, z: -40, range: 12 },
-  castle: { x: 65, z: -20, range: 14 },
-  barracks: { x: 55, z: 30, range: 12 },
-  construction: { x: 30, z: 50, range: 4 },
-  theatre: { x: -40, z: -20, range: 10 },
-  university: { x: 40, z: -55, range: 12 },
+  // Near-city locations (visible from default camera)
+  temple: { x: 35, z: -28, range: 8 },
+  cathedral: { x: 35, z: -28, range: 8 },
+  castle: { x: 45, z: -14, range: 10 },
+  barracks: { x: 38, z: 22, range: 8 },
+  construction: { x: 20, z: 35, range: 4 },
+  theatre: { x: -28, z: -14, range: 7 },
+  university: { x: 28, z: -38, range: 8 },
 
-  // Outer locations (characters explore the wider terrain)
-  farm: { x: -100, z: -80, range: 8 },
-  forest: { x: -140, z: -120, range: 10 },
-  perimeter: { x: 0, z: 150, range: 12 },
-  park: { x: -80, z: 40, range: 10 },
-  factory: { x: 90, z: 70, range: 8 },
-  bio_dome: { x: -60, z: -60, range: 10 },
+  // Work locations (close enough to see souls acting)
+  farm: { x: -35, z: -28, range: 8 },
+  forest: { x: -50, z: -42, range: 10 },
+  perimeter: { x: 0, z: 55, range: 10 },
+  park: { x: -30, z: 20, range: 8 },
+  factory: { x: 40, z: 30, range: 6 },
+  bio_dome: { x: -25, z: -22, range: 8 },
 
-  // Resource gathering locations
-  cave_entrance: { x: -200, z: -160, range: 8 },
-  forest_edge:   { x: -160, z: -120, range: 10 },
-  quarry:        { x: 180,  z: -140, range: 8 },
+  // Resource gathering locations (within visible range)
+  cave_entrance: { x: -55, z: -45, range: 6 },
+  forest_edge:   { x: -48, z: -35, range: 8 },
+  quarry:        { x: 52,  z: -42, range: 6 },
+
+  // Night gathering
+  campfire_spot: { x: 6, z: 18, range: 3 },
 }
