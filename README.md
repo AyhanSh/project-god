@@ -127,22 +127,9 @@ src/
 
 ---
 
-## Roadmap
-
-- [x] Character models with procedural animation
-- [x] 5-layer soul consciousness architecture
-- [x] 3D world with terrain and city generation
-- [x] 6 era visual system
-- [ ] Full Anthropic API soul decisions in-browser
-- [ ] Multiplayer God mode (two players, one world)
-- [ ] Soul memory that persists across sessions
-- [ ] Mobile support
-
----
-
 ## About
 
-Built by [@AyhanSh](https://github.com/AyhanSh) [Link.me](link.me/aykhanium)as part of a tech blog / creator project exploring what happens when you give AI real agency inside a simulated world.
+Built by [@AyhanSh](https://github.com/AyhanSh) [Link.me](link.me/aykhanium) as part of a tech blog / creator project exploring what happens when you give AI real agency inside a simulated world.
 
 ---
 
