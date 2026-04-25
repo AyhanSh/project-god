@@ -4,7 +4,7 @@
 
 ### *You are not playing a game. You are watching life happen.*
 
-A browser-based AI civilization simulation where every human has a real mind — powered by Claude.
+A browser-based AI civilization simulation where every human has a real mind, powered by AI.
 Watch souls be born, fall in love, go to war, build cities, and die across 5,000 years of history.
 
 ![Project God Banner](./public/banner.png)
@@ -15,26 +15,26 @@ Watch souls be born, fall in love, go to war, build cities, and die across 5,000
 
 ## What is this?
 
-Project God is a civilization simulator — but unlike any other.
+Project God is a civilization simulator, but unlike any other.
 
 Every person in this world is powered by a real AI (Claude by Anthropic). They don't follow scripts. They **think**. They have personalities, goals, fears, families, and opinions. They make decisions based on what's happening around them. When a plague breaks out, some people panic. Some pray. Some become doctors. Some take advantage of it.
 
-You are God. You can observe, nudge, or stay silent — but the world moves on its own.
+You are God. You can observe, nudge, or stay silent but the world moves on its own.
 
-The simulation spans **6 historical eras** — from ancient tribes to the modern age — and every year brings new births, deaths, discoveries, wars, and revolutions.
+The simulation spans **6 historical eras** from ancient tribes to the modern age — and every year brings new births, deaths, discoveries, wars, and revolutions.
 
 ---
 
 ## Features
 
 ### 🧠 Real AI Minds
-Each soul has a 5-layer consciousness architecture — personality, memory, desires, fears, and relationships. They make decisions through real Anthropic API calls. No two souls think alike.
+Each soul has a 5-layer consciousness architecture - personality, memory, desires, fears, and relationships. They make decisions through real Anthropic API calls. No two souls think alike.
 
 ### 🌍 Living 3D World
 Built with Three.js and React Three Fiber. Watch a tiny village grow into a sprawling city over centuries. Buildings go up. Roads form. Cities rise and fall.
 
 ### 👤 Animated Human Models
-Minecraft-style blocky characters with fully procedural animations — idle, walking, working, praying, fighting, and celebrating. Every soul has a unique aura color.
+Minecraft-style blocky characters with fully procedural animations: idle, walking, working, praying, fighting, and celebrating. Every soul has a unique aura color.
 
 ### 🏛️ 6 Historical Eras
 - **Ancient** — tribes, shamans, early settlements
@@ -43,9 +43,6 @@ Minecraft-style blocky characters with fully procedural animations — idle, wal
 - **Renaissance** — artists, explorers, gunpowder
 - **Industrial** — factories, revolutions, steam engines
 - **Modern** — technology, global conflict, the internet
-
-### ⚡ Autonomous Events
-Wars, plagues, discoveries, famines, golden ages — all trigger organically based on the world's state. Nobody scripts them. They just... happen.
 
 ### 🕹️ God Mode Controls
 Intervene or observe. Send a vision. Trigger a disaster. Bless a soul. Or just watch and see what they do without you.
@@ -86,8 +83,6 @@ cp .env.example .env.local
 # Run the dev server
 pnpm dev
 ```
-
-Open [http://localhost:3000](http://localhost:3000) and watch your world come alive.
 
 ---
 
