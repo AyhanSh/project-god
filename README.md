@@ -129,7 +129,7 @@ src/
 
 ## About
 
-Built by [@AyhanSh](https://github.com/AyhanSh) [Link.me](link.me/aykhanium) as part of a tech blog / creator project exploring what happens when you give AI real agency inside a simulated world.
+Built by [@AyhanSh](https://github.com/AyhanSh) [Link.me](https://link.me/aykhanium) as part of a tech blog / creator project exploring what happens when you give AI real agency inside a simulated world.
 
 ---
 
